@@ -136,7 +136,7 @@ Labels can range from a short identifier to longer descriptive text:
 | `calls` | When/why the call happens, constraints | `"After tokenization. Falls back to default parser on SkipError."` |
 | `inherits` | Nature or reason for the inheritance | `"Base parsing interface"` |
 | `implements` | Which contract is fulfilled, constraints | `"Serialization support — must handle circular refs"` |
-| `detail` | Method name | `"parse()"` |
+| `detail` | Method or field name | `"parse()"`, `"config"` |
 | `context` | Type of context | `"rationale"`, `"reference"`, `"API docs"` |
 
 Labels serve multiple purposes:
@@ -154,10 +154,10 @@ Labels are optional. An edge without a label still conveys the relationship thro
 - **`composes`** — class contains another as a field (has-a relationship)
 - **`depends`** — class uses another (import/dependency)
 - **`calls`** — method calls another method (method call flow)
-- **`detail`** — class node → method detail node link (the ● connection)
+- **`detail`** — class node → method or field detail node link (the ● connection)
 - **`context`** — links a context node (text/file/link) to a ccoding node for reference. Multiple context nodes can attach to the same target node.
 
-**Edge targeting:** Edges always connect node-to-node. There is no sub-node anchoring (e.g., targeting a specific method within a class node). If a method needs to be the source or target of an edge (such as a `calls` relationship), it must be promoted to its own method detail node. This keeps the spec aligned with JSON Canvas's native model and reinforces the progressive detail principle — methods with visible relationships are important enough to warrant their own node.
+**Edge targeting:** Edges always connect node-to-node. There is no sub-node anchoring (e.g., targeting a specific method or field within a class node). If a method or field needs to be the source or target of an edge, it must be promoted to its own detail node. This keeps the spec aligned with JSON Canvas's native model and reinforces the progressive detail principle — elements with visible relationships are important enough to warrant their own node.
 
 ### 3.2 Context Nodes
 
@@ -446,6 +446,6 @@ An agent skill/integration must:
 A language binding must define:
 
 - **Stereotype mapping** — which `stereotype` values are valid for the language (e.g., Python: `class` | `protocol` | `abstract` | `dataclass` | `enum`; TypeScript: `class` | `interface` | `abstract` | `type` | `enum`)
-- **Documentation format** — how `Responsibility`, `Pseudo Code`, `Collaborators`, and signature information map to the language's documentation conventions
+- **Documentation format** — how the structured markdown sections (`Responsibility`, `Pseudo Code`, `Signature`, `Constraints`, etc.) and edge-derived information (collaborators, dependencies) map to the language's documentation conventions
 - **Sync mapping** — concrete rules for how each canvas element maps to language-specific code constructs
 - **Type notation** — how types in the structured markdown `### Fields` and `### Signature` sections correspond to the language's type system
