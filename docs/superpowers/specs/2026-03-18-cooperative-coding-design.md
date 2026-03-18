@@ -157,6 +157,8 @@ Labels are optional. An edge without a label still conveys the relationship thro
 - **`detail`** — class node → method detail node link (the ● connection)
 - **`context`** — links a context node (text/file/link) to a ccoding node for reference. Multiple context nodes can attach to the same target node.
 
+**Edge targeting:** Edges always connect node-to-node. There is no sub-node anchoring (e.g., targeting a specific method within a class node). If a method needs to be the source or target of an edge (such as a `calls` relationship), it must be promoted to its own method detail node. This keeps the spec aligned with JSON Canvas's native model and reinforces the progressive detail principle — methods with visible relationships are important enough to warrant their own node.
+
 ### 3.2 Context Nodes
 
 Alongside `ccoding`-specific nodes (class, method, package), a CooperativeCoding canvas supports **standard JSON Canvas nodes** for collaboration context:
