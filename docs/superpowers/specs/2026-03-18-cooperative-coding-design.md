@@ -1,4 +1,8 @@
-# CooperativeCoding Initiative — Design Specification
+# CooperativeCoding — Open Specification
+
+*A language-agnostic, tool-agnostic standard for human-agent collaborative software design.*
+
+---
 
 ## 1. Vision & Objective
 
@@ -8,16 +12,29 @@ The core insight: **code design and code implementation are different skills tha
 
 CooperativeCoding separates these concerns:
 
-- **The human works on a visual canvas** — a simplified UML where classes, interfaces, methods, fields, and their relationships are first-class objects. Each element carries a docstring with its responsibility and pseudo code. The canvas shows what truly matters: the architecture, the contracts, the design intent.
-- **The agent works on the code** — it reads the canvas design, proposes improvements as ghost nodes, implements the underlying Python (and eventually other languages), and keeps canvas and code in bidirectional sync.
+- **The human works on a visual canvas** — a simplified UML where classes, interfaces, methods, fields, and their relationships are first-class objects. Each element carries a documentation block with its responsibility and pseudo code. The canvas shows what truly matters: the architecture, the contracts, the design intent.
+- **The agent works on the code** — it reads the canvas design, proposes improvements as ghost nodes, implements the underlying source code, and keeps canvas and code in bidirectional sync.
 - **They cooperate** — the agent doesn't just execute orders. It proposes design changes (ghost nodes on canvas), flags architectural issues, and suggests alternatives. The human remains the design authority — accepting, rejecting, or modifying proposals before anything gets implemented.
 
-The deliverable is an ecosystem of 4 subsystems:
+### 1.1 Scope of This Specification
 
-1. **The CooperativeCoding Spec** — the data model, formats, and conventions that all tools share
-2. **An Obsidian plugin** — extending Obsidian Canvas with CooperativeCoding node types and UX
-3. **An extended Obsidian CLI** — programmatic canvas manipulation and bidirectional sync engine
-4. **A Claude Code skill** — teaching the agent to design, propose, and implement in this paradigm
+This document defines the **open CooperativeCoding standard** — a community contribution that can be adopted and implemented by any canvas tool, any programming language, and any agentic system. It is intentionally tool-agnostic and language-agnostic.
+
+Concrete implementations require three things:
+
+1. **A canvas tool implementation** — a plugin or extension for a visual canvas application (e.g., Obsidian, Excalidraw, tldraw, VS Code) that renders CooperativeCoding nodes and supports the cooperation UX
+2. **A language binding** — a mapping from the abstract spec to a specific programming language's idioms (e.g., Python docstrings, TypeScript JSDoc, Rust doc comments)
+3. **An agent integration** — a skill, plugin, or configuration that teaches an agentic coding tool to work within the CooperativeCoding paradigm
+
+### 1.2 Reference Implementation
+
+The first reference implementation targets:
+
+- **Canvas tool:** Obsidian (self-contained plugin + extended Obsidian CLI)
+- **Language:** Python (PEP-compliant docstrings, type hints, protocols)
+- **Agent:** Claude Code (skill for design, proposal, and implementation)
+
+Details specific to this reference implementation are in the appendices.
 
 ---
 
@@ -27,7 +44,7 @@ The deliverable is an ecosystem of 4 subsystems:
 
 2. **Progressive Detail** — Not everything deserves the same level of attention. Class nodes give the overview. Method nodes add detail only where it matters. The canvas highlights architecture, not every line of code.
 
-3. **Docstring as Contract** — The docstring is the bridge between canvas and code. It contains the responsibility, pseudo code, and type signatures that both the human and agent rely on. If the docstring is clear, the implementation follows. Extended Google/NumPy style with `Responsibility:` and `Pseudo Code:` sections.
+3. **Documentation as Contract** — The documentation block is the bridge between canvas and code. It contains the responsibility, pseudo code, and type signatures that both the human and agent rely on. If the documentation is clear, the implementation follows.
 
 4. **Bidirectional Truth** — Canvas and code are two views of the same system. Changes in either propagate to the other. Neither is "primary" — they are kept in sync through a shared data model.
 
@@ -35,31 +52,22 @@ The deliverable is an ecosystem of 4 subsystems:
 
 6. **Any Entry Point** — Start from a blank canvas, describe a system in natural language, or import existing code. The paradigm meets you where you are.
 
-7. **Language-Agnostic Paradigm, Concrete Implementations** — The concepts (nodes, edges, docstrings, ghost proposals) are universal. Each language gets a concrete implementation that maps to its idioms. Python is the first supported language (protocols, PEP docstrings, type hints); other languages follow.
+7. **Language-Agnostic, Tool-Agnostic** — The concepts (nodes, edges, documentation blocks, ghost proposals) are universal. Each programming language and canvas tool gets a concrete binding that maps to its idioms and capabilities.
 
 ---
 
 ## 3. Data Model
 
-The CooperativeCoding data model is a semantic layer on top of Obsidian's JSON Canvas format. The plugin is self-contained — it does not require Advanced Canvas but coexists with it without conflicts.
-
-```
-CooperativeCoding Plugin (semantic model + rendering)
-    ↓ extends directly
-Obsidian Canvas / JSON Canvas v1.0
-    ↓ optionally coexists with
-Advanced Canvas (detected at runtime, avoids conflicts)
-```
+The CooperativeCoding data model is a semantic layer on top of the [JSON Canvas v1.0](https://jsoncanvas.org/spec/1.0/) open specification. Any canvas tool that supports JSON Canvas can adopt CooperativeCoding by reading the `ccoding` metadata fields.
 
 A `.canvas` file produced by CooperativeCoding is:
 
 - Valid **JSON Canvas v1.0** — any tool can read the basics
-- Enriched with **`ccoding` metadata** — semantic information for the CLI, skill, and sync engine
-- Optionally compatible with **Advanced Canvas** — both plugins can coexist
+- Enriched with **`ccoding` metadata** — semantic information for the sync engine, agent, and canvas tool
 
 ### 3.1 Semantic Layer: `ccoding` Metadata
 
-Every CooperativeCoding node and edge carries a `ccoding` object with semantic information. Standard tools safely ignore these fields; our plugin, CLI, and skill read them.
+Every CooperativeCoding node and edge carries a `ccoding` object with semantic information. Standard tools safely ignore these fields; CooperativeCoding-aware tools read them.
 
 **Node metadata:**
 
@@ -84,12 +92,12 @@ Every CooperativeCoding node and edge carries a `ccoding` object with semantic i
 
 Fields:
 
-- **`kind`**: `class` | `method` | `field` | `package`
-- **`stereotype`** (class nodes): `class` | `protocol` | `abstract` | `dataclass` | `enum`
-- **`language`**: `python` (extensible to other languages)
+- **`kind`**: `class` | `method` | `field` | `package` — the type of code element this node represents
+- **`stereotype`**: language-specific subtype (see language binding appendices for valid values per language). Common values: `class` | `interface` | `abstract` | `enum`
+- **`language`**: identifier for the programming language (e.g., `python`, `typescript`, `rust`, `go`)
 - **`source`**: relative path to the source file this node maps to
-- **`qualifiedName`**: fully qualified Python name (e.g., `parsers.document.DocumentParser.parse`)
-- **`status`**: `accepted` | `proposed` | `rejected`
+- **`qualifiedName`**: fully qualified name in the target language (e.g., `parsers.document.DocumentParser`)
+- **`status`**: `accepted` | `proposed` | `rejected` — ghost nodes have `proposed`
 - **`proposedBy`**: `"agent"` | `"human"` | `null`
 - **`proposalRationale`**: string explaining why this node/edge was proposed (ghost nodes only, `null` for accepted)
 
@@ -111,9 +119,9 @@ Fields:
 **Relation types:**
 
 - **`inherits`** — class extends another class
-- **`implements`** — class implements a protocol/interface
-- **`composes`** — class contains another as a field
-- **`depends`** — class uses another
+- **`implements`** — class implements an interface/protocol/trait
+- **`composes`** — class contains another as a field (has-a relationship)
+- **`depends`** — class uses another (import/dependency)
 - **`calls`** — method calls another method (method call flow)
 - **`detail`** — class node → method detail node link (the ● connection)
 - **`context`** — links a context node (text/file/link) to a ccoding node for reference. Multiple context nodes can attach to the same target node.
@@ -122,7 +130,7 @@ Fields:
 
 Alongside `ccoding`-specific nodes (class, method, package), a CooperativeCoding canvas supports **standard JSON Canvas nodes** for collaboration context:
 
-- **Text nodes** — free-form notes for design rationale, decision logs, open questions, TODOs. Example: "We chose Protocol over ABC here because we don't need default implementations"
+- **Text nodes** — free-form notes for design rationale, decision logs, open questions, TODOs
 - **File nodes** — embedded images, PDFs, diagrams from other tools, reference screenshots, architecture sketches, whiteboard photos
 - **Link nodes** — external URLs to documentation, API references, related repos, issue trackers
 
@@ -146,91 +154,27 @@ Context nodes:
 }
 ```
 
-### 3.3 Rendering Layer: Self-Contained with Optional Compatibility
+### 3.3 Node Content: Structured Markdown
 
-CooperativeCoding implements its own canvas rendering extensions, patching only what it needs from Obsidian's Canvas internals. It does not require Advanced Canvas.
-
-**Our plugin handles:**
-
-- Custom node rendering based on `ccoding.kind` and `ccoding.stereotype` (UML-style class boxes, method detail cards)
-- Custom edge rendering based on `ccoding.relation` (inheritance arrows, composition diamonds, etc.)
-- Ghost node UX: dashed borders, reduced opacity, accept/reject controls for `status: "proposed"` nodes
-- Canvas event hooks for bidirectional sync triggers
-
-**Node visual styles:**
-
-- **Class nodes**: UML box shape, purple border. Stereotype shown as `«protocol»`, `«abstract»`, etc.
-- **Method nodes**: Rounded shape, orange border
-- **Package groups**: Styled group node with module path label
-- **Ghost nodes**: Dashed border, reduced opacity, accept/reject overlay
-- **Rejected nodes**: Greyed out, collapsible
-
-**Edge visual styles:**
-
-- **`inherits`**: solid line, hollow triangle arrow
-- **`implements`**: dashed line, hollow triangle arrow
-- **`composes`**: solid line, filled diamond
-- **`depends`**: dashed line, open arrow
-- **`calls`**: dotted line, filled arrow
-- **`detail`**: solid line, circle endpoint
-- **`context`**: thin grey line, no arrow
-
-**Context nodes** (text/file/link without `ccoding.kind`) render with standard Obsidian Canvas styling — we do not override their appearance. When a ccoding node is selected, its linked context nodes are visually highlighted to show the association. Multiple context nodes can attach to the same target.
-
-### 3.3.1 Clash Prevention Strategy
-
-**Namespace isolation:**
-
-- All CSS classes use the `ccoding-` prefix (e.g., `ccoding-class-node`, `ccoding-ghost`, `ccoding-edge-inherits`)
-- All `data-*` attributes use `data-ccoding-*` (e.g., `data-ccoding-kind`, `data-ccoding-status`)
-- Canvas metadata lives exclusively in the `ccoding` object — we never read or write Advanced Canvas's own metadata fields
-
-**Patch chaining, not overwriting:**
-
-- Use the `monkey-around` library (same one Advanced Canvas uses), which wraps existing methods rather than replacing them
-- Our patches call `next()` to pass through to the original (or Advanced Canvas's patch), only adding behavior for nodes/edges that have `ccoding` metadata
-- If a node has no `ccoding` field, our patch is a no-op passthrough
-
-```
-Canvas method call
-  → CooperativeCoding patch (acts only on ccoding nodes, else passes through)
-    → Advanced Canvas patch (acts on its own nodes, else passes through)
-      → Original Obsidian Canvas method
-```
-
-**Load order independence:**
-
-- Works correctly regardless of which plugin loads first
-- On startup, we detect Advanced Canvas but never call its internals directly — we only avoid double-patching shared entry points
-- If Advanced Canvas is removed later, our plugin continues working without changes
-
-**Defensive CSS:**
-
-- Our styles target only elements with `[data-ccoding-kind]` selectors
-- We never use generic `.canvas-node` selectors without also requiring our namespace attribute
-- No `!important` overrides on shared properties
-
-### 3.4 Node Content: Structured Markdown
-
-The canvas node `text` field uses structured markdown that is both human-readable on the canvas and parseable for sync.
+The canvas node `text` field uses structured markdown that is both human-readable on the canvas and parseable for sync. This format is language-agnostic — it uses generic sections that each language binding maps to its idioms.
 
 **Class node content:**
 
 ```markdown
-«protocol»
+«interface»
 ## DocumentParser
 
 > Responsible for parsing raw documents into structured AST nodes
 
 ### Fields
 - config: `ParserConfig`
-- _cache: `dict[str, AST]`
-- plugins: `list[ParserPlugin]`
+- _cache: `Map<String, AST>`
+- plugins: `List<ParserPlugin>`
 
 ### Methods
-- parse(source: `str`) -> `AST` ●
-- validate(ast: `AST`) -> `bool`
-- register_plugin(p: `ParserPlugin`) -> `None`
+- parse(source: `String`) -> `AST` ●
+- validate(ast: `AST`) -> `Boolean`
+- register_plugin(p: `ParserPlugin`) -> `Void`
 ```
 
 **Method node content:**
@@ -242,7 +186,7 @@ The canvas node `text` field uses structured markdown that is both human-readabl
 Transform raw source into a validated AST, applying all registered plugins in order.
 
 ### Signature
-- **IN:** source: `str` — raw document text
+- **IN:** source: `String` — raw document text
 - **OUT:** `AST` — parsed syntax tree
 - **RAISES:** `ParseError` — on malformed input
 
@@ -256,11 +200,217 @@ Transform raw source into a validated AST, applying all registered plugins in or
 7. Cache and return
 ```
 
-**Package node:** Uses JSON Canvas group nodes with `ccoding.kind: "package"`. Label = module path (e.g., `parsers.document`). Contains child class nodes.
+**Package node:** Uses JSON Canvas group nodes with `ccoding.kind: "package"`. Label = module/package path. Contains child class nodes.
 
-### 3.5 Docstring Format (Python Implementation)
+The structured markdown sections (`### Responsibility`, `### Pseudo Code`, `### Signature`, `### Fields`, `### Methods`) are part of the spec. Language bindings define how these map to language-specific documentation formats (e.g., Python docstrings, JSDoc comments, Rust doc comments).
 
-The docstring in `.py` files mirrors the canvas node content. This is the bridge for bidirectional sync — changes to either side propagate through the sync engine.
+### 3.4 Recommended Visual Representation
+
+The spec recommends (but does not mandate) the following visual conventions for canvas tool implementations. Tools may adapt these to their rendering capabilities.
+
+**Node visual styles:**
+
+- **Class nodes**: UML box shape, purple border. Stereotype label (`«interface»`, `«abstract»`, etc.)
+- **Method nodes**: Rounded shape, orange border
+- **Package groups**: Styled group node with module path label
+- **Ghost nodes** (`status: "proposed"`): Dashed border, reduced opacity, accept/reject overlay
+- **Rejected nodes**: Greyed out, collapsible or hidden
+
+**Edge visual styles:**
+
+- **`inherits`**: solid line, hollow triangle arrow
+- **`implements`**: dashed line, hollow triangle arrow
+- **`composes`**: solid line, filled diamond
+- **`depends`**: dashed line, open arrow
+- **`calls`**: dotted line, filled arrow
+- **`detail`**: solid line, circle endpoint
+- **`context`**: thin grey line, no arrow
+
+**Context nodes** (text/file/link without `ccoding.kind`) render with the canvas tool's default styling. When a ccoding node is selected, its linked context nodes should be visually highlighted to show the association. Multiple context nodes can attach to the same target.
+
+### 3.5 Sync Mapping: Abstract Rules
+
+Bidirectional sync maps canvas elements to code elements. The abstract rules below apply regardless of language; each language binding defines the concrete mapping.
+
+| Canvas Element | Code Element |
+|---|---|
+| Class node `text` | Class/type definition + documentation block |
+| Method node `text` | Method/function signature + documentation block |
+| Class `### Fields` | Class attributes/fields + type annotations |
+| Method `### Pseudo Code` | Documentation block `Pseudo Code` section |
+| Method `### Signature` | Method signature + parameter/return documentation |
+| Package group | Module/package/namespace directory |
+| Edge `inherits` | Inheritance declaration |
+| Edge `implements` | Interface/protocol/trait implementation |
+| Edge `composes` | Field with composed type |
+| Edge `depends` | Import/use/require statement |
+| `ccoding.status: proposed` | Not yet in code (ghost) |
+| Context nodes (text/file/link) | Not synced — canvas-only collaboration artifacts |
+| Edge `context` | Not synced — canvas-only association |
+
+---
+
+## 4. Cooperation Workflow
+
+### 4.1 Entry Points
+
+Three ways to start a CooperativeCoding session:
+
+**From blank canvas (human sketches first):**
+
+1. Human creates class/method nodes manually on canvas
+2. Human fills in responsibility, fields, methods, pseudo code
+3. Human asks the agent to implement → agent reads canvas, generates source files, sync establishes
+
+**From natural language (agent proposes):**
+
+1. Human describes the system in text: "I need a document parser with plugin support and caching"
+2. Agent generates an initial design as ghost nodes (all `status: "proposed"`)
+3. Human reviews the canvas — accepts, rejects, or modifies individual nodes and edges
+4. Once the human is satisfied, they ask the agent to implement the accepted design
+
+**From existing code (import):**
+
+1. Human points the tool at existing source files: "Import src/parsers/ into the canvas"
+2. The sync engine parses the code — extracts classes, methods, fields, type annotations, documentation, relationships
+3. Generates canvas nodes with `status: "accepted"` (since the code already exists)
+4. Human and agent can now iterate on the design visually
+
+### 4.2 The Cooperation Loop
+
+```
+Human edits canvas  ──→  Sync updates code
+       ↑                        ↓
+  Human accepts/          Agent reads code
+  rejects proposals       + canvas state
+       ↑                        ↓
+Agent proposes      ←──  Agent identifies
+ghost nodes               improvements
+```
+
+**Human actions on canvas:**
+
+- Create, edit, delete nodes and edges
+- Edit documentation blocks, pseudo code, responsibility directly in node text
+- Accept a ghost node (`status` → `accepted`, triggers code generation)
+- Reject a ghost node (`status` → `rejected`, node greys out or hides)
+- Request agent input: "What's missing from this design?" or "Implement this class"
+
+**Agent actions:**
+
+- **Propose** — create ghost nodes/edges (`status: "proposed"`, `proposedBy: "agent"`) with a rationale
+- **Implement** — generate or update source code from accepted canvas nodes
+- **Sync** — detect code changes and update canvas, or detect canvas changes and update code
+- **Analyze** — flag design issues (circular dependencies, missing interfaces, SRP violations)
+- **Never** modify accepted nodes without human approval — all changes come as proposals
+
+### 4.3 Ghost Node Lifecycle
+
+```
+proposed  ──accept──→  accepted  ──→  code generated/updated
+    │                                        ↓
+    │                                  bidirectional sync active
+    │
+    └──reject──→  rejected  ──→  greyed out / hidden
+                      │
+                      └──reconsider──→  proposed (back to review)
+```
+
+- Ghost nodes carry a `proposalRationale` field in their `ccoding` metadata explaining why the agent proposed them
+- Multiple ghost nodes can be proposed at once (e.g., "I suggest splitting this class into two" creates two new class ghosts + edges)
+- The human can modify a ghost node before accepting it (edit the responsibility, rename, change fields) — it stays `proposed` until explicitly accepted
+
+### 4.4 Bidirectional Sync Rules
+
+**Canvas → Code** (triggered when human or agent edits canvas):
+
+- New accepted class node → generate new source file with class skeleton + documentation block
+- Edit class fields/methods → update class definition in source
+- Edit method pseudo code → update documentation block
+- New edge `inherits` → update inheritance declaration in code
+- Delete accepted node → mark code as deprecated (not deleted — human must delete manually for safety)
+
+**Code → Canvas** (triggered when agent or human edits source files):
+
+- New class in source → create new class node on canvas
+- New method added → update class node's method list (and create method detail node if documentation contains pseudo code)
+- Changed documentation sections → update corresponding canvas node text
+- Changed type annotations / signatures → update canvas fields and method signatures
+- Deleted class/method → mark canvas node as stale (visual indicator, not auto-deleted)
+
+**Conflict resolution:**
+
+- If both canvas and code changed for the same element since last sync → flag a conflict
+- Agent presents both versions to human and asks which to keep (or merge)
+- Never silently overwrite either side
+
+---
+
+## 5. Implementation Guide
+
+Any complete CooperativeCoding implementation requires three components. This section defines what each must support.
+
+### 5.1 Canvas Tool Implementation
+
+A canvas tool plugin/extension must:
+
+- **Render** `ccoding` nodes according to their `kind` and `stereotype` (using the recommended visual styles or tool-appropriate equivalents)
+- **Render** edges according to their `relation` type with visually distinguishable styles
+- **Support ghost node UX** — visually distinguish `proposed` nodes (e.g., dashed borders), provide accept/reject controls
+- **Preserve** `ccoding` metadata in the `.canvas` file through save/load cycles
+- **Emit events** when nodes or edges are created, modified, or deleted (for sync triggers)
+- **Render context nodes** (text/file/link) with the tool's native styling, visually highlighting linked context nodes when a ccoding node is selected
+- **Coexist safely** with other canvas plugins/extensions — namespace all custom attributes, avoid overriding shared styles
+
+### 5.2 Programmatic Interface (CLI / API)
+
+A programmatic interface must support:
+
+- **Canvas CRUD** — create, read, update, delete nodes and edges in `.canvas` files
+- **Ghost node management** — propose, accept, reject nodes via commands
+- **Sync engine** — bidirectional sync between canvas and source files, following the abstract sync mapping rules
+- **Code parsing** — extract classes, methods, fields, type annotations, documentation from source files to generate canvas nodes
+- **Canvas parsing** — read structured markdown from canvas nodes to generate/update source files
+- **Import** — parse an existing codebase into canvas representation
+- **Conflict detection** — identify canvas/code conflicts and surface them for resolution
+
+### 5.3 Agent Integration
+
+An agent skill/integration must:
+
+- **Know the spec** — understand node types, edge semantics, documentation format, sync rules
+- **Know the programmatic interface** — be able to call the CLI/API for all canvas and sync operations
+- **Design mode** — read canvas, analyze architecture, propose improvements as ghost nodes with rationales
+- **Implement mode** — read accepted canvas nodes, generate source code following the documentation contract
+- **Review mode** — compare canvas design to actual code, flag drift or violations
+- **Conversation patterns** — know how to ask the human for design decisions, present proposals, and suggest architectural improvements
+
+### 5.4 Language Binding
+
+A language binding must define:
+
+- **Stereotype mapping** — which `stereotype` values are valid for the language (e.g., Python: `class` | `protocol` | `abstract` | `dataclass` | `enum`; TypeScript: `class` | `interface` | `abstract` | `type` | `enum`)
+- **Documentation format** — how `Responsibility`, `Pseudo Code`, `Collaborators`, and signature information map to the language's documentation conventions
+- **Sync mapping** — concrete rules for how each canvas element maps to language-specific code constructs
+- **Type notation** — how types in the structured markdown `### Fields` and `### Signature` sections correspond to the language's type system
+
+---
+
+## Appendix A: Python Language Binding
+
+### A.1 Stereotype Mapping
+
+| `ccoding.stereotype` | Python Construct |
+|---|---|
+| `class` | `class Foo:` |
+| `protocol` | `class Foo(Protocol):` |
+| `abstract` | `class Foo(ABC):` |
+| `dataclass` | `@dataclass class Foo:` |
+| `enum` | `class Foo(Enum):` |
+
+### A.2 Documentation Format
+
+Python uses [Google-style docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings) extended with custom sections.
 
 **Class docstring:**
 
@@ -313,165 +463,96 @@ def parse(self, source: str) -> AST:
     """
 ```
 
-Custom sections added to standard Google style: **`Responsibility:`**, **`Pseudo Code:`**, and **`Collaborators:`** (for classes).
+Custom sections: **`Responsibility:`**, **`Pseudo Code:`**, **`Collaborators:`** (for classes).
 
-### 3.6 Sync Mapping Summary
+### A.3 Sync Mapping
 
-| Canvas | Python Code |
+| Canvas Element | Python Code |
 |---|---|
 | Class node `text` | Class definition + class docstring |
 | Method node `text` | Method signature + method docstring |
 | Class `### Fields` | Class attributes + type annotations |
 | Method `### Pseudo Code` | Docstring `Pseudo Code:` section |
 | Method `### Signature` | Method signature + `Args:`/`Returns:`/`Raises:` |
-| Package group | Python module/package directory |
+| Package group | Python package directory (`__init__.py`) |
 | Edge `inherits` | `class Foo(Bar)` |
 | Edge `implements` | `class Foo(Protocol)` |
 | Edge `composes` | Field with composed type |
-| Edge `depends` | Import statement |
-| `ccoding.status: proposed` | Not yet in code (ghost) |
-| Context nodes (text/file/link) | Not synced — canvas-only collaboration artifacts |
-| Edge `context` | Not synced — canvas-only association |
+| Edge `depends` | `import` / `from ... import` statement |
+| `ccoding.stereotype: protocol` | `typing.Protocol` |
+| `ccoding.stereotype: dataclass` | `@dataclasses.dataclass` |
+| `ccoding.stereotype: abstract` | `abc.ABC` + `@abstractmethod` |
+
+### A.4 Type Notation
+
+Canvas structured markdown uses Python type hint syntax directly:
+
+- `str`, `int`, `float`, `bool` for primitives
+- `list[T]`, `dict[K, V]`, `tuple[T, ...]` for collections
+- `Optional[T]` or `T | None` for optional types
+- Custom types use their class name (e.g., `ParserConfig`, `AST`)
 
 ---
 
-## 4. Cooperation Workflow
+## Appendix B: Obsidian Canvas Tool Implementation
 
-### 4.1 Entry Points
+### B.1 Architecture
 
-Three ways to start a CooperativeCoding session:
-
-**From blank canvas (human sketches first):**
-
-1. Human creates class/method nodes manually on canvas
-2. Human fills in responsibility, fields, methods, pseudo code
-3. Human asks the agent to implement → agent reads canvas, generates `.py` files, sync establishes
-
-**From natural language (agent proposes):**
-
-1. Human describes the system in text: "I need a document parser with plugin support and caching"
-2. Agent generates an initial design as ghost nodes (all `status: "proposed"`)
-3. Human reviews the canvas — accepts, rejects, or modifies individual nodes and edges
-4. Once the human is satisfied, they ask the agent to implement the accepted design
-
-**From existing code (import):**
-
-1. Human points the tool at existing `.py` files: "Import src/parsers/ into the canvas"
-2. CLI/skill parses the code — extracts classes, methods, fields, type hints, docstrings, relationships
-3. Generates canvas nodes with `status: "accepted"` (since the code already exists)
-4. Human and agent can now iterate on the design visually
-
-### 4.2 The Cooperation Loop
+The Obsidian implementation is a self-contained plugin that extends Obsidian's Canvas directly. It does not require the Advanced Canvas plugin but is designed to coexist with it.
 
 ```
-Human edits canvas  ──→  Sync updates code
-       ↑                        ↓
-  Human accepts/          Agent reads code
-  rejects proposals       + canvas state
-       ↑                        ↓
-Agent proposes      ←──  Agent identifies
-ghost nodes               improvements
+CooperativeCoding Plugin (semantic model + rendering)
+    ↓ extends directly
+Obsidian Canvas / JSON Canvas v1.0
+    ↓ optionally coexists with
+Advanced Canvas (detected at runtime, avoids conflicts)
 ```
 
-**Human actions on canvas:**
+### B.2 Rendering
 
-- Create, edit, delete nodes and edges
-- Edit docstrings, pseudo code, responsibility directly in node text
-- Accept a ghost node (`status` → `accepted`, triggers code generation)
-- Reject a ghost node (`status` → `rejected`, node greys out or hides)
-- Request agent input: "What's missing from this design?" or "Implement this class"
+The plugin handles:
 
-**Agent actions:**
+- Custom node rendering based on `ccoding.kind` and `ccoding.stereotype` (UML-style class boxes, method detail cards)
+- Custom edge rendering based on `ccoding.relation` (inheritance arrows, composition diamonds, etc.)
+- Ghost node UX: dashed borders, reduced opacity, accept/reject controls for `status: "proposed"` nodes
+- Canvas event hooks for bidirectional sync triggers
 
-- **Propose** — create ghost nodes/edges (`status: "proposed"`, `proposedBy: "agent"`) with a rationale in the node text
-- **Implement** — generate or update `.py` code from accepted canvas nodes
-- **Sync** — detect code changes and update canvas, or detect canvas changes and update code
-- **Analyze** — flag design issues (circular dependencies, missing interfaces, SRP violations)
-- **Never** modify accepted nodes without human approval — all changes come as proposals
+### B.3 Clash Prevention Strategy
 
-### 4.3 Ghost Node Lifecycle
+**Namespace isolation:**
+
+- All CSS classes use the `ccoding-` prefix (e.g., `ccoding-class-node`, `ccoding-ghost`, `ccoding-edge-inherits`)
+- All `data-*` attributes use `data-ccoding-*` (e.g., `data-ccoding-kind`, `data-ccoding-status`)
+- Canvas metadata lives exclusively in the `ccoding` object — we never read or write Advanced Canvas's own metadata fields
+
+**Patch chaining, not overwriting:**
+
+- Use the `monkey-around` library, which wraps existing methods rather than replacing them
+- Our patches call `next()` to pass through to the original (or Advanced Canvas's patch), only adding behavior for nodes/edges that have `ccoding` metadata
+- If a node has no `ccoding` field, our patch is a no-op passthrough
 
 ```
-proposed  ──accept──→  accepted  ──→  code generated/updated
-    │                                        ↓
-    │                                  bidirectional sync active
-    │
-    └──reject──→  rejected  ──→  greyed out / hidden
-                      │
-                      └──reconsider──→  proposed (back to review)
+Canvas method call
+  → CooperativeCoding patch (acts only on ccoding nodes, else passes through)
+    → Advanced Canvas patch (acts on its own nodes, else passes through)
+      → Original Obsidian Canvas method
 ```
 
-- Ghost nodes carry a `proposalRationale` field in their `ccoding` metadata explaining why the agent proposed them
-- Multiple ghost nodes can be proposed at once (e.g., "I suggest splitting this class into two" creates two new class ghosts + edges)
-- The human can modify a ghost node before accepting it (edit the responsibility, rename, change fields) — it stays `proposed` until explicitly accepted
+**Load order independence:**
 
-### 4.4 Bidirectional Sync Rules
+- Works correctly regardless of which plugin loads first
+- On startup, we detect Advanced Canvas but never call its internals directly — we only avoid double-patching shared entry points
+- If Advanced Canvas is removed later, our plugin continues working without changes
 
-**Canvas → Code** (triggered when human edits canvas):
+**Defensive CSS:**
 
-- New accepted class node → generate new `.py` file with class skeleton + docstring
-- Edit class fields/methods → update class definition in `.py`
-- Edit method pseudo code → update `Pseudo Code:` section in method docstring
-- New edge `inherits` → update class inheritance in code
-- Delete accepted node → mark code as deprecated (not deleted — human must delete code manually for safety)
+- Our styles target only elements with `[data-ccoding-kind]` selectors
+- We never use generic `.canvas-node` selectors without also requiring our namespace attribute
+- No `!important` overrides on shared properties
 
-**Code → Canvas** (triggered when agent or human edits `.py` files):
+### B.4 Extended Obsidian CLI
 
-- New class in `.py` → create new class node on canvas
-- New method added → update class node's method list (and create method detail node if it has `Pseudo Code:` in docstring)
-- Changed docstring sections → update corresponding canvas node text
-- Changed type hints / signatures → update canvas fields and method signatures
-- Deleted class/method → mark canvas node as stale (visual indicator, not auto-deleted)
-
-**Conflict resolution:**
-
-- If both canvas and code changed for the same element since last sync → flag a conflict
-- Agent presents both versions to human and asks which to keep (or merge)
-- Never silently overwrite either side
-
----
-
-## 5. Subsystem Architecture & Responsibilities
-
-Each subsystem owns a clear domain and communicates through the shared `.canvas` + `.py` files.
-
-### 5.1 The CooperativeCoding Spec (this document)
-
-**Owns:** The contract that all subsystems follow.
-
-- `ccoding` metadata schema (node and edge fields, valid values)
-- Structured markdown format for node content
-- Extended docstring format (Responsibility, Pseudo Code, Collaborators sections)
-- Edge relation types and their visual + code mappings
-- Ghost node lifecycle and status transitions
-- Sync mapping rules (canvas ↔ code)
-- Clash prevention rules for Obsidian plugin coexistence
-
-### 5.2 The Obsidian Plugin
-
-**Owns:** Visual canvas experience and real-time editing UX.
-
-- Renders `ccoding` nodes with UML-style visuals (class boxes, method cards, edge styles)
-- Ghost node UX: dashed rendering, accept/reject controls, proposal rationale display
-- Structured markdown editing within nodes (fields, methods, docstrings)
-- Canvas event hooks: emits filesystem events or signals when nodes/edges change
-- Detects and avoids clashing with Advanced Canvas (namespace isolation, patch chaining)
-- Package group rendering with module path labels
-
-Does not own: Sync logic, code generation, or agent cooperation. It is a visual tool.
-
-### 5.3 The Extended Obsidian CLI
-
-**Owns:** Programmatic canvas manipulation and the bidirectional sync engine.
-
-- **Canvas operations:** create/read/update/delete nodes and edges in `.canvas` files via CLI commands
-- **Sync engine:** watches `.canvas` and `.py` files, applies sync mapping rules, detects conflicts
-- **Code parsing:** extracts classes, methods, fields, type hints, docstrings from `.py` files to generate/update canvas nodes
-- **Canvas parsing:** reads structured markdown from canvas nodes to generate/update `.py` code
-- **Ghost node management:** CLI commands to propose nodes (`--status proposed`), accept, reject
-- **Import:** parse existing Python codebase into canvas representation
-
-Example CLI commands:
+The Obsidian CLI is extended with `ccoding` subcommands for programmatic canvas manipulation:
 
 ```bash
 # Create a class node
@@ -492,34 +573,36 @@ obsidian ccoding sync --canvas design.canvas --source src/
 obsidian ccoding import --source src/parsers/ --canvas design.canvas
 ```
 
-Does not own: Visual rendering or agent workflow orchestration.
+The CLI owns the sync engine logic. The plugin provides the visual layer.
 
-### 5.4 The Claude Code Skill
+---
 
-**Owns:** Teaching the agent to cooperate within the CooperativeCoding paradigm.
+## Appendix C: Claude Code Agent Integration
 
-- Knows the full spec: node types, edge semantics, docstring format, sync rules
-- Knows how to call the extended CLI for all canvas and sync operations
+### C.1 Skill Overview
+
+The Claude Code skill teaches the agent to cooperate within the CooperativeCoding paradigm:
+
+- Knows the full spec: node types, edge semantics, documentation format, sync rules
+- Knows how to call the Obsidian CLI `ccoding` subcommands for all canvas and sync operations
 - **Design mode:** reads canvas, analyzes architecture, proposes improvements as ghost nodes with rationales
-- **Implement mode:** reads accepted canvas nodes, generates Python code following the docstring contract
+- **Implement mode:** reads accepted canvas nodes, generates Python code following the documentation contract
 - **Review mode:** compares canvas design to actual code, flags drift or violations
 - **Conversation patterns:** how to ask the human for design decisions, how to present proposals, when to suggest splitting a class vs. keeping it
 
-Does not own: The CLI itself or the plugin UX.
-
-### 5.5 Subsystem Dependencies
+### C.2 Build Order
 
 ```
-Spec (data model contract)
- ├── Plugin (reads spec to render correctly)
- ├── CLI (reads spec to sync correctly)
- └── Skill (reads spec to cooperate correctly)
+Spec (this document — defines everything, no dependencies)
+ ├── Obsidian Plugin (reads spec to render correctly)
+ ├── Obsidian CLI extension (reads spec to sync correctly)
+ └── Claude Code Skill (reads spec + uses CLI to cooperate)
 
 Build order:
-  1. Spec        (defines everything, no dependencies)
-  2. CLI         (needs spec, enables programmatic canvas work)
-  3. Plugin      (needs spec, can develop in parallel with CLI)
-  4. Skill       (needs spec + CLI to be functional)
+  1. Spec               (defines the standard)
+  2. CLI extension      (needs spec, enables programmatic canvas work)
+  3. Obsidian Plugin    (needs spec, can develop in parallel with CLI)
+  4. Claude Code Skill  (needs spec + CLI to be functional)
 ```
 
 The CLI and Plugin can be developed in parallel after the spec is done — they share the data model but don't depend on each other. The Skill comes last because it needs to call the CLI.
