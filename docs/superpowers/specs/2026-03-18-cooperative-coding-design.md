@@ -76,7 +76,8 @@ Every CooperativeCoding node and edge carries a `ccoding` object with semantic i
     "source": "src/parsers/document.py",
     "qualifiedName": "parsers.document.DocumentParser",
     "status": "accepted",
-    "proposedBy": null
+    "proposedBy": null,
+    "proposalRationale": null
   }
 }
 ```
@@ -90,6 +91,7 @@ Fields:
 - **`qualifiedName`**: fully qualified Python name (e.g., `parsers.document.DocumentParser.parse`)
 - **`status`**: `accepted` | `proposed` | `rejected`
 - **`proposedBy`**: `"agent"` | `"human"` | `null`
+- **`proposalRationale`**: string explaining why this node/edge was proposed (ghost nodes only, `null` for accepted)
 
 **Edge metadata:**
 
