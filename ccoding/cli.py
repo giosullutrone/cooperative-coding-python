@@ -5,8 +5,11 @@ import sys
 import click
 from pathlib import Path
 
+from ccoding import __version__
+
 
 @click.group()
+@click.version_option(version=__version__)
 @click.option("--project", type=click.Path(exists=True, path_type=Path), default=".")
 @click.pass_context
 def main(ctx: click.Context, project: Path) -> None:
