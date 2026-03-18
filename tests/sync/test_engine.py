@@ -1,0 +1,61 @@
+# tests/sync/test_engine.py
+import json
+from pathlib import Path
+from ccoding.sync.engine import sync, import_codebase, SyncResult
+from ccoding.sync.state import load_sync_state
+from ccoding.canvas.reader import read_canvas
+
+
+class TestImportCodebase:
+    def test_import_creates_canvas(self, tmp_project: Path, fixtures_dir: Path):
+        canvas_path = tmp_project / "design.canvas"
+        result = import_codebase(
+            source_dir=fixtures_dir / "sample_python",
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        canvas = read_canvas(canvas_path)
+        class_names = {
+            n.ccoding.qualified_name
+            for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "class"
+        }
+        assert len(class_names) >= 3
+        for n in canvas.nodes:
+            if n.ccoding:
+                assert n.ccoding.status == "accepted"
+                assert n.ccoding.layout_pending is True
+        state = load_sync_state(tmp_project)
+        assert len(state.elements) > 0
+
+
+class TestSync:
+    def test_sync_no_changes(self, tmp_project: Path, fixtures_dir: Path):
+        canvas_path = tmp_project / "design.canvas"
+        import_codebase(
+            source_dir=fixtures_dir / "sample_python",
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert result.conflicts == []
+        assert result.canvas_to_code == []
+        assert result.code_to_canvas == []
+
+    def test_sync_detects_code_addition(self, tmp_project: Path):
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+        (src_dir / "new_module.py").write_text(
+            'class NewClass:\n    """A new class.\n\n    Responsibility:\n        Does new things.\n    """\n    pass\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert len(result.code_to_canvas) > 0
+        canvas = read_canvas(canvas_path)
+        names = {
+            n.ccoding.qualified_name
+            for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "class"
+        }
+        assert any("NewClass" in name for name in names)
