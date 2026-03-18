@@ -7,23 +7,29 @@ The Claude Code skill is subsystem #3 of the CooperativeCoding initiative. It te
 **Form factor:** Standalone Claude Code plugin (own `plugin.json`, independent from Superpowers).
 
 **Interaction with other subsystems:**
-- All canvas operations go through the `ccoding` CLI (subsystem #1) — the skill never manipulates `.canvas` JSON directly.
+- All canvas mutations go through the `ccoding` CLI (subsystem #1) — the skill never writes `.canvas` JSON directly. Read-only access to the `.canvas` file is permitted for analysis (design and review modes need the full graph structure, which `ccoding status` alone does not provide).
 - The Obsidian plugin (subsystem #2) reflects changes in real-time via its file watcher, so the user sees proposals appear as the agent works.
+
+**Prerequisite:** The CLI must expose a `--version` flag (add `@click.version_option()` to the `main` group in `cli.py` — it already has `__version__ = "0.1.0"` in `__init__.py`). This is a one-line fix and must land before the skill is usable.
 
 ## 2. Plugin Structure
 
 ```
 claude-code-skill/
-├── plugin.json                    # Plugin manifest
+├── .claude-plugin/
+│   └── plugin.json                # Plugin manifest
 ├── skills/
-│   └── cooperative-coding.md      # Main skill (auto-trigger + all 4 modes)
+│   └── cooperative-coding/
+│       └── SKILL.md               # Main skill (auto-trigger + all 4 modes)
 ├── commands/
 │   └── ccoding.md                 # /ccoding slash command
 └── hooks/
-    └── session-start.sh           # Detects .ccoding/ projects
+    ├── hooks.json                 # Hook event configuration
+    └── scripts/
+        └── session-start.sh       # Detects .ccoding/ projects
 ```
 
-### 2.1 Plugin Manifest (`plugin.json`)
+### 2.1 Plugin Manifest (`.claude-plugin/plugin.json`)
 
 ```json
 {
@@ -39,18 +45,38 @@ Frontmatter:
 
 ```yaml
 ---
-name: ccoding
 description: Work with CooperativeCoding canvases — create, design, implement, or review
-arguments:
-  - name: mode
-    description: "Mode: create, design, implement, review (optional — defaults to last used or asks)"
-    required: false
+argument-hint: "[create|design|implement|review]"
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 ---
 ```
 
-The command body delegates to the `cooperative-coding` skill with the specified mode.
+The command body reads `$ARGUMENTS` to extract the mode (if provided) and delegates to the `cooperative-coding` skill.
 
-### 2.3 Session-Start Hook (`hooks/session-start.sh`)
+### 2.3 Session-Start Hook
+
+**`hooks/hooks.json`:**
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**`hooks/scripts/session-start.sh`:**
 
 ```bash
 #!/bin/bash
@@ -118,12 +144,15 @@ Propose architecture in stages, getting approval at each level:
 
 ### 4.3 Canvas Creation
 
-After each approved section, immediately create nodes/edges via CLI:
-- `ccoding init` if the project is not yet initialized
-- `ccoding create-node` for each class/package
-- `ccoding create-edge` for each relationship
+After each approved section, immediately create nodes/edges via CLI. The CLI only supports creating nodes as `status: proposed` (ghost), so the workflow is a two-step propose-then-accept pattern:
 
-All nodes are created with `status: accepted` — the human explicitly approved each piece in conversation. This distinguishes create mode from design mode, where suggestions arrive as ghost nodes for async review.
+1. `ccoding init` if the project is not yet initialized
+2. For each node: `ccoding propose --kind <kind> --name <qualifiedName> --rationale "Initial design — approved in conversation"` followed by `ccoding accept <node_id>`
+3. For each edge: `ccoding propose-edge --from <from_id> --to <to_id> --relation <relation> --label "<description>" --rationale "Initial design — approved in conversation"` followed by `ccoding accept <edge_id>`
+
+The immediate accept after propose distinguishes create mode from design mode, where ghost nodes persist for async review. The `--rationale` documents that these elements were human-approved during creation.
+
+**Note:** The `propose` command creates nodes with minimal text content (just the name). After creating and accepting a node, the skill should use `ccoding show <qualifiedName>` to verify content, and if richer structured markdown is needed (fields, methods, documentation sections), update the node's text content by reading and editing the `.canvas` file followed by `ccoding sync` to update state. This is the one case where direct canvas file editing is acceptable — the CLI does not yet support setting full node content via command-line flags.
 
 If the user has Obsidian open, the canvas watcher auto-reloads — they see the design populate in real-time.
 
@@ -133,7 +162,7 @@ After the overview is placed, ask: "Want to add method/field details to any of t
 
 For each class the user wants to detail:
 - Gather method signatures, responsibilities, pseudo code
-- Create detail nodes linked via `detail` edges
+- Create detail nodes via the same propose-then-accept pattern, linked with `detail` relation edges
 
 ### 4.5 Initial Sync
 
@@ -145,8 +174,9 @@ Design mode analyzes an existing canvas and proposes improvements as ghost nodes
 
 ### 5.1 Read Current State
 
-- Run `ccoding status` to get the project overview
-- Read the `.canvas` file to understand the full architecture (nodes, edges, relationships, statuses)
+- Run `ccoding status` to get the project overview and sync state
+- Run `ccoding ghosts` to list any pending proposals
+- Read the `.canvas` file directly (read-only) to understand the full architecture — nodes, edges, relationships, statuses. This is necessary because `ccoding status` provides a summary but not the complete graph structure needed for architectural analysis.
 
 ### 5.2 Architectural Analysis
 
@@ -166,8 +196,12 @@ Present findings conversationally, one at a time:
 1. Explain the issue in plain language
 2. Propose a specific change (new class, split, new edge, etc.)
 3. Ask the user if they want to apply it
-4. If yes → execute via CLI: `ccoding propose "ClassName"` with appropriate flags, `ccoding propose-edge` for relationships
+4. If yes → execute via CLI:
+   - For new nodes: `ccoding propose --kind <kind> --name <qualifiedName> --rationale "<explanation>"`
+   - For new edges: `ccoding propose-edge --from <from_id> --to <to_id> --relation <relation> --label "<description>" --rationale "<explanation>"`
 5. If no → move on to the next finding
+
+Ghost nodes remain as `status: proposed` — the user reviews and accepts/rejects them via Obsidian's context menu or the CLI.
 
 **Conversation pattern examples:**
 - "DocumentParser is doing parsing *and* caching. Want me to propose extracting a CacheManager?"
@@ -226,15 +260,17 @@ Review mode compares canvas design to actual code and flags drift or violations.
 
 ### 7.1 Sync Check
 
-Run `ccoding status` to get the current drift report:
+Run `ccoding diff` first for a dry-run showing what would change, then `ccoding status` for the full drift report:
 - Nodes with code changes not reflected in canvas
 - Canvas changes not reflected in code
 - Stale nodes (canvas node exists but code was deleted)
 - Missing nodes (code exists but no canvas representation)
 
+Also run `ccoding check` as a quick pass/fail validation gate (the same check the pre-commit hook runs).
+
 ### 7.2 Architectural Analysis
 
-Read the canvas and the code, then analyze:
+Read the `.canvas` file (read-only) and the source code, then analyze:
 - **Circular dependencies** between packages
 - **SRP violations** — class with many unrelated methods
 - **Dependency inversion violations** — concrete class depending on another concrete class where a protocol would be better
@@ -254,7 +290,7 @@ Present issues conversationally, grouped by severity:
 For each finding the user agrees to fix:
 - **Drift** → run `ccoding sync` with appropriate conflict resolution flag (`--canvas-wins` or `--code-wins`)
 - **Violations** → switch to design mode to propose structural fixes as ghost nodes
-- **Staleness** → run `ccoding reject <node>` or update the canvas
+- **Staleness** → run `ccoding reject <node_id>` (takes the internal canvas node ID, not the qualified name) or update the canvas
 
 ### 7.5 Periodic Review Suggestion
 
@@ -276,18 +312,17 @@ last_mode: design
 - **ccoding_path** — custom CLI path if not in PATH. Defaults to `ccoding`.
 - **last_mode** — last mode used. `/ccoding` with no argument defaults to this (with confirmation).
 
-### 8.2 Settings Updates
+### 8.2 Settings Lifecycle
 
-The skill updates `.local.md` when:
-- A canvas path is discovered or specified for the first time
-- The user explicitly changes the canvas path
-- A mode is used (updates `last_mode`)
+- **Creation:** The skill creates `.claude/cooperative-coding.local.md` on first run if it does not exist. If the `.claude/` directory does not exist, create it first.
+- **Updates:** The skill updates the YAML frontmatter when a canvas path is discovered/specified, the user changes settings, or a mode is used (updates `last_mode`).
+- **Body text:** The `.local.md` file may also contain markdown body text below the frontmatter. The skill should preserve any existing body text when updating frontmatter. The body can contain user notes about the project's canvas conventions.
 
 No other persistent state is needed. The CLI manages its own state via `.ccoding/sync-state.json` and `.ccoding/config.json`.
 
 ## 9. Skill Content Guidelines
 
-The skill file (`skills/cooperative-coding.md`) must account for the following to trigger and function reliably:
+The skill file (`skills/cooperative-coding/SKILL.md`) must account for the following to trigger and function reliably:
 
 ### 9.1 Description Field
 
@@ -298,7 +333,7 @@ The description must be broad enough to trigger on natural language across all f
 The skill body should use progressive disclosure:
 - **Mode selection logic** at the top (short — decides which mode, resolves canvas)
 - **Per-mode instructions** in clearly separated sections
-- **CLI command reference** as a compact cheat sheet (not full docs — just the commands the skill uses with their flags)
+- **CLI command reference** as a compact cheat sheet (Section 12 of this spec)
 - **Conversation pattern examples** showing how to phrase proposals, ask for confirmation, report findings
 
 ### 9.3 Tone Guidance
@@ -349,3 +384,27 @@ Each mode should be tested against a sample canvas:
 ### 11.3 Test Fixture
 
 Use the existing `tests/fixtures/sample.canvas` from the CLI package as a starting point for functional tests.
+
+## 12. CLI Command Reference
+
+Commands the skill uses, with exact syntax from `ccoding/cli.py`:
+
+| Command | Syntax | Purpose |
+|---------|--------|---------|
+| `init` | `ccoding init [--hooks]` | Initialize `.ccoding/` project directory |
+| `status` | `ccoding status` | Show sync state, drift, and pending changes |
+| `diff` | `ccoding diff` | Dry-run sync showing what would change |
+| `check` | `ccoding check` | Validate canvas/code sync (pass/fail) |
+| `sync` | `ccoding sync [--canvas-wins\|--code-wins]` | Bidirectional sync between canvas and code |
+| `show` | `ccoding show <qualified_name>` | Display node details (structured markdown) |
+| `ghosts` | `ccoding ghosts` | List all pending proposals |
+| `propose` | `ccoding propose --kind <kind> --name <name> --rationale <text>` | Create a ghost node (`--kind` defaults to `class`) |
+| `propose-edge` | `ccoding propose-edge --from <id> --to <id> --relation <rel> --label <text> --rationale <text>` | Create a ghost edge |
+| `accept` | `ccoding accept <node_or_edge_id>` | Accept a ghost element |
+| `reject` | `ccoding reject <node_or_edge_id>` | Reject a ghost element |
+| `reconsider` | `ccoding reconsider <node_or_edge_id>` | Move rejected element back to proposed |
+| `accept-all` | `ccoding accept-all` | Accept all pending proposals |
+| `reject-all` | `ccoding reject-all` | Reject all pending proposals |
+| `import` | `ccoding import --source <dir>` | Import existing codebase into canvas |
+
+**Note:** All ID arguments (`<node_or_edge_id>`, `--from`, `--to`) use the internal canvas element IDs (e.g., `"node-abc123"`), not qualified names.
