@@ -391,7 +391,7 @@ Commands the skill uses, with exact syntax from `ccoding/cli.py`:
 
 | Command | Syntax | Purpose |
 |---------|--------|---------|
-| `init` | `ccoding init [--hooks]` | Initialize `.ccoding/` project directory |
+| `init` | `ccoding init` | Initialize `.ccoding/` project directory |
 | `status` | `ccoding status` | Show sync state, drift, and pending changes |
 | `diff` | `ccoding diff` | Dry-run sync showing what would change |
 | `check` | `ccoding check` | Validate canvas/code sync (pass/fail) |
@@ -405,6 +405,6 @@ Commands the skill uses, with exact syntax from `ccoding/cli.py`:
 | `reconsider` | `ccoding reconsider <node_or_edge_id>` | Move rejected element back to proposed |
 | `accept-all` | `ccoding accept-all` | Accept all pending proposals |
 | `reject-all` | `ccoding reject-all` | Reject all pending proposals |
-| `import` | `ccoding import --source <dir>` | Import existing codebase into canvas |
+| `import` | `ccoding import --source <dir> --canvas <canvas-file>` | Import existing codebase into canvas |
 
 **Note:** All ID arguments (`<node_or_edge_id>`, `--from`, `--to`) use the internal canvas element IDs (e.g., `"node-abc123"`), not qualified names.
