@@ -152,6 +152,7 @@ Concrete rules for bidirectional sync between canvas elements and Python code:
 | Class node `text` | Class definition + class docstring |
 | Method node `text` | Method signature + method docstring |
 | Class `### Fields` | Class attributes with type annotations |
+| Field detail node `text` | Field annotation + comment block (`Responsibility`, `Constraints`, `Default`) |
 | Method `### Pseudo Code` | Docstring `Pseudo Code:` section |
 | Method `### Signature` IN | Method parameters with type hints + `Args:` docstring section |
 | Method `### Signature` OUT | Return type hint + `Returns:` docstring section |
@@ -174,6 +175,7 @@ When generating Python code from an accepted canvas node:
 - **Import management**: automatically add required imports based on stereotypes, edges, and type annotations
 - **Class skeleton**: generate class definition, docstring, and attribute stubs with type annotations. Method bodies are initially `...` (ellipsis) or `raise NotImplementedError`
 - **Method skeleton**: generate method signature with full type hints, docstring with all sections, and `...` body
+- **Field detail**: when a field has a detail node, generate the field annotation with a comment block above it containing `Responsibility`, `Constraints`, and `Default` sections. Default values are applied to the annotation (e.g., `config: ParserConfig = ParserConfig.default()`)
 
 ### 4.2 Code Parsing Rules
 
@@ -181,9 +183,9 @@ When importing existing Python code to canvas:
 
 - **Class detection**: any `class` statement. Stereotype inferred from base classes (`Protocol` → `protocol`, `ABC` → `abstract`, `Enum` → `enum`) and decorators (`@dataclass` → `dataclass`)
 - **Method detection**: any `def` inside a class body. Skip dunder methods except those with architectural intent: `__init__`, `__post_init__` (dataclasses), `__enter__`/`__exit__` (context managers), `__call__`, `__iter__`/`__next__`
-- **Field detection**: class-level annotated assignments and `__init__` assignments with type annotations
+- **Field detection**: class-level annotated assignments and `__init__` assignments with type annotations. If a field has a comment block above it containing `Responsibility:`, `Constraints:`, or `Default:`, create a field detail node
 - **Relationship detection**: base classes → `inherits`/`implements` edges. Type annotations referencing other project classes → `composes`/`depends` edges. Import statements → `depends` edges
-- **Documentation extraction**: parse existing Google-style docstrings. Map standard sections (`Args:`, `Returns:`, `Raises:`, `Attributes:`) and custom sections (`Responsibility:`, `Pseudo Code:`, `Collaborators:`) to canvas node content
+- **Documentation extraction**: parse existing Google-style docstrings. Map standard sections (`Args:`, `Returns:`, `Raises:`, `Attributes:`) and custom sections (`Responsibility:`, `Pseudo Code:`, `Collaborators:`, `Constraints:`) to canvas node content
 
 ---
 

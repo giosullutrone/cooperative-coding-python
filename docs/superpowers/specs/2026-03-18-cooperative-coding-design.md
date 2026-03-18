@@ -292,6 +292,7 @@ Bidirectional sync maps canvas elements to code elements. The abstract rules bel
 | Class node `text` | Class/type definition + documentation block |
 | Method node `text` | Method/function signature + documentation block |
 | Class `### Fields` | Class attributes/fields + type annotations |
+| Field detail node `text` | Field annotation + documentation (responsibility, constraints, default) |
 | Method `### Pseudo Code` | Documentation block `Pseudo Code` section |
 | Method `### Signature` | Method signature + parameter/return documentation |
 | Package group | Module/package/namespace directory |
