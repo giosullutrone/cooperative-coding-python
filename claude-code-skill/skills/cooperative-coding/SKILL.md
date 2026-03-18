@@ -79,18 +79,30 @@ After each approved section, create nodes and edges immediately. The CLI only cr
 ccoding init
 
 # Create a node (propose then accept)
-ccoding propose --kind class --name "parsers.document.DocumentParser" --rationale "Initial design — approved in conversation"
-# Note the node ID from output, then:
+# Output format: "Proposed node <id>  name='...'  kind='...'"
+ccoding propose --kind class --stereotype protocol --name "parsers.document.DocumentParser" --rationale "Initial design — approved in conversation"
+# Parse the node ID from output, then:
 ccoding accept <node_id>
 
 # Create an edge (propose then accept)
+# Output format: "Proposed edge <id>  <from> -> <to>  relation='...'"
 ccoding propose-edge --from <from_id> --to <to_id> --relation composes --label "plugins — Applied sequentially" --rationale "Initial design — approved in conversation"
 ccoding accept <edge_id>
 ```
 
-The `--rationale` documents that these elements were human-approved during creation.
+The `--rationale` documents that these elements were human-approved during creation. Use `--stereotype` to set the Python construct type (protocol, abstract, dataclass, enum).
 
-**Rich node content:** The `propose` command creates nodes with minimal text. After creating and accepting a node, if it needs full structured markdown (fields, methods, documentation), read and edit the `.canvas` file directly to set the node's `text` field, then run `ccoding sync` to update state. This is the one exception to the "no direct canvas writes" rule.
+**Rich node content:** The `propose` command creates nodes with minimal text. After creating and accepting a node, use `set-text` to add full structured markdown (fields, methods, documentation):
+
+```bash
+# Pipe structured markdown into the node
+echo '# DocumentParser\n## Responsibility\nParses documents...' | ccoding set-text <node_id>
+
+# Or from a temp file for complex content
+ccoding set-text <node_id> --file /tmp/node-content.md
+```
+
+Then run `ccoding sync` to update state.
 
 ### Detail Pass
 
@@ -136,8 +148,11 @@ Present findings one at a time, conversationally:
 4. If yes → run the appropriate CLI command:
 
 ```bash
-# Propose a new class
+# Propose a new class (with optional --stereotype)
 ccoding propose --kind class --name "cache.CacheManager" --rationale "Extract caching from DocumentParser — single responsibility"
+
+# Propose a protocol
+ccoding propose --kind class --stereotype protocol --name "parsers.DataSource" --rationale "Decouple Parser from FileReader"
 
 # Propose a new relationship
 ccoding propose-edge --from <from_id> --to <to_id> --relation depends --label "Cache lookup before parsing" --rationale "Decouple caching from parsing logic"
@@ -253,6 +268,8 @@ After significant implement sessions, suggest a review: "We've implemented sever
 
 ## CLI Quick Reference
 
+**Global option:** `--project <path>` — set project root (default: `.`). Use when CWD is not the project root.
+
 | Command | Syntax | Purpose |
 |---------|--------|---------|
 | init | `ccoding init` | Initialize project |
@@ -260,9 +277,10 @@ After significant implement sessions, suggest a review: "We've implemented sever
 | diff | `ccoding diff` | Dry-run sync preview |
 | check | `ccoding check` | Pass/fail validation |
 | sync | `ccoding sync [--canvas-wins\|--code-wins]` | Bidirectional sync |
-| show | `ccoding show <qualified_name>` | Node details |
+| show | `ccoding show <qualified_name>` | Node details (by qualified name) |
+| set-text | `ccoding set-text <id> [--file <path>]` | Set node text content (stdin or file) |
 | ghosts | `ccoding ghosts` | List pending proposals |
-| propose | `ccoding propose --kind <kind> --name <name> --rationale <text>` | Create ghost node |
+| propose | `ccoding propose --kind <kind> --name <name> [--stereotype <type>] --rationale <text>` | Create ghost node |
 | propose-edge | `ccoding propose-edge --from <id> --to <id> --relation <rel> --label <text> --rationale <text>` | Create ghost edge |
 | accept | `ccoding accept <id>` | Accept proposal |
 | reject | `ccoding reject <id>` | Reject proposal |
@@ -271,7 +289,7 @@ After significant implement sessions, suggest a review: "We've implemented sever
 | reject-all | `ccoding reject-all` | Reject all proposals |
 | import | `ccoding import --source <dir> --canvas <canvas-file>` | Import codebase |
 
-All IDs are internal canvas element IDs (e.g., `node-abc123`), not qualified names.
+All IDs are internal canvas element IDs (e.g., `node-abc123`), not qualified names. `propose` and `propose-edge` print the new element's ID in their output — parse it for subsequent `accept` calls.
 
 ## Error Handling
 

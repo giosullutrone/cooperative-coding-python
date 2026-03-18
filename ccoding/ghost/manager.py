@@ -61,12 +61,14 @@ def propose_node(
     content: str,
     rationale: str,
     proposed_by: str = "agent",
+    stereotype: str | None = None,
 ) -> Node:
     """Create a ghost node and add it to canvas.nodes."""
     node_id = _new_id()
     if kind is not None:
         meta = CcodingMetadata(
             kind=kind,
+            stereotype=stereotype,
             status=_PROPOSED,
             proposed_by=proposed_by,
             proposal_rationale=rationale,
@@ -75,6 +77,7 @@ def propose_node(
         # Context node — minimal metadata
         meta = CcodingMetadata(
             kind="class",
+            stereotype=stereotype,
             status=_PROPOSED,
             proposed_by=proposed_by,
             proposal_rationale=rationale,

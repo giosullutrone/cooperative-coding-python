@@ -358,9 +358,11 @@ def reject_all_cmd(ctx: click.Context) -> None:
 @main.command()
 @click.option("--kind", default="class", help="Node kind (e.g. class, interface).")
 @click.option("--name", required=True, help="Class/component name.")
+@click.option("--stereotype", default=None,
+              help="Stereotype (protocol, abstract, dataclass, enum).")
 @click.option("--rationale", default="", help="Rationale for the proposal.")
 @click.pass_context
-def propose(ctx: click.Context, kind: str, name: str, rationale: str) -> None:
+def propose(ctx: click.Context, kind: str, name: str, stereotype: str | None, rationale: str) -> None:
     """Propose a new ghost node in the canvas."""
     from ccoding.config import load_config
     from ccoding.canvas.reader import read_canvas
@@ -377,7 +379,8 @@ def propose(ctx: click.Context, kind: str, name: str, rationale: str) -> None:
         from ccoding.canvas.model import Canvas
         canvas = Canvas()
 
-    node = propose_node(canvas, kind=kind, name=name, content=name, rationale=rationale)
+    node = propose_node(canvas, kind=kind, name=name, content=name,
+                        rationale=rationale, stereotype=stereotype)
     write_canvas(canvas, canvas_path)
     click.echo(f"Proposed node {node.id}  name={name!r}  kind={kind!r}")
 
@@ -446,6 +449,46 @@ def show(ctx: click.Context, qualified_name: str) -> None:
         sys.exit(1)
 
     click.echo(node.text)
+
+
+# ---------------------------------------------------------------------------
+# set-text
+# ---------------------------------------------------------------------------
+
+
+@main.command(name="set-text")
+@click.argument("node_id")
+@click.option("--file", "text_file", type=click.File("r"), default="-",
+              help="Read text from file (default: stdin).")
+@click.pass_context
+def set_text(ctx: click.Context, node_id: str, text_file) -> None:
+    """Set the text content of a canvas node by ID."""
+    from ccoding.config import load_config
+    from ccoding.canvas.reader import read_canvas
+    from ccoding.canvas.writer import write_canvas
+
+    project: Path = ctx.obj["project"]
+    config = load_config(project)
+    canvas_path = project / config.canvas
+    canvas = read_canvas(canvas_path)
+
+    node = None
+    for n in canvas.nodes:
+        if n.id == node_id:
+            node = n
+            break
+
+    if node is None:
+        click.echo(f"No node found with ID: {node_id!r}", err=True)
+        sys.exit(1)
+
+    new_text = text_file.read()
+    node.text = new_text
+    write_canvas(canvas, canvas_path)
+
+    name = (node.ccoding.qualified_name if node.ccoding and node.ccoding.qualified_name
+            else node_id)
+    click.echo(f"Updated text for {name} ({len(new_text)} chars)")
 
 
 # ---------------------------------------------------------------------------
