@@ -1,36 +1,26 @@
-/* styles.css — CooperativeCoding Obsidian Plugin */
+/* styles.css — CooperativeCoding Obsidian Plugin
+ *
+ * Minimal overrides on top of Obsidian's native canvas styling.
+ * Accepted nodes look exactly like normal canvas nodes.
+ * Only proposed/rejected/stale get visual treatment.
+ * Uses Obsidian CSS variables for theming compatibility.
+ */
 
 /* ============================================
-   Node styling — kind-based borders
+   Ghost (proposed) nodes — the key distinction
    ============================================ */
 
-.ccoding-node-class {
-  border: 3px solid #8b5cf6 !important;
-  border-radius: 4px !important;
+.ccoding-ghost > .canvas-node-container {
+  border-style: dashed !important;
 }
-
-.ccoding-node-method {
-  border: 3px solid #f97316 !important;
-  border-radius: 12px !important;
-}
-
-.ccoding-node-field {
-  border: 3px solid #3b82f6 !important;
-  border-radius: 12px !important;
-}
-
-.ccoding-node-package {
-  border: 3px solid #22c55e !important;
-}
-
-/* ============================================
-   Node styling — status-based treatment
-   ============================================ */
 
 .ccoding-ghost {
-  border-style: dashed !important;
   opacity: 0.7;
 }
+
+/* ============================================
+   Rejected and stale nodes
+   ============================================ */
 
 .ccoding-rejected {
   opacity: 0.3;
@@ -41,156 +31,72 @@
 }
 
 .ccoding-stale {
-  border: 3px solid #ca8a04 !important;
-}
-
-.ccoding-stale .markdown-rendered h2 {
-  text-decoration: line-through;
+  opacity: 0.5;
 }
 
 /* ============================================
-   Edge styling — relation-based
+   Ghost edges
    ============================================ */
 
-.ccoding-edge-inherits path {
-  stroke: #e2e8f0 !important;
-  stroke-width: 2px !important;
-  stroke-dasharray: none !important;
-}
-
-.ccoding-edge-implements path {
-  stroke: #e2e8f0 !important;
-  stroke-width: 2px !important;
-  stroke-dasharray: 8 4 !important;
-}
-
-.ccoding-edge-composes path {
-  stroke: #8b5cf6 !important;
-  stroke-width: 2px !important;
-  stroke-dasharray: none !important;
-}
-
-.ccoding-edge-depends path {
-  stroke: #64748b !important;
-  stroke-width: 1px !important;
-  stroke-dasharray: 8 4 !important;
-}
-
-.ccoding-edge-calls path {
-  stroke: #f97316 !important;
-  stroke-width: 1px !important;
-  stroke-dasharray: 2 4 !important;
-}
-
-.ccoding-edge-detail path {
-  stroke: #3b82f6 !important;
-  stroke-width: 1px !important;
-  stroke-dasharray: none !important;
-}
-
-.ccoding-edge-context path {
-  stroke: #475569 !important;
-  stroke-width: 1px !important;
-  stroke-dasharray: none !important;
-}
-
-/* SVG markers — applied via marker-end/marker-start on edge paths */
-.ccoding-edge-inherits path {
-  marker-end: url(#ccoding-marker-inherits);
-}
-
-.ccoding-edge-implements path {
-  marker-end: url(#ccoding-marker-implements);
-}
-
-.ccoding-edge-composes path {
-  marker-start: url(#ccoding-marker-composes);
-}
-
-.ccoding-edge-depends path {
-  marker-end: url(#ccoding-marker-depends);
-}
-
-.ccoding-edge-calls path {
-  marker-end: url(#ccoding-marker-calls);
-}
-
-.ccoding-edge-detail path {
-  marker-end: url(#ccoding-marker-detail);
-}
-
-/* Ghost edges */
 .ccoding-edge.ccoding-ghost path {
-  opacity: 0.7;
+  stroke-dasharray: 8 4 !important;
+  opacity: 0.5;
 }
 
 /* ============================================
-   Context node highlighting
+   Context node highlighting (on selection)
    ============================================ */
 
-.ccoding-context-highlight {
-  box-shadow: 0 0 12px 2px rgba(96, 165, 250, 0.5) !important;
-}
-
-.ccoding-context-highlight path {
-  stroke: #e2e8f0 !important;
-  stroke-width: 1.5px !important;
+.ccoding-context-highlight > .canvas-node-container {
+  box-shadow: 0 0 8px 2px var(--interactive-accent) !important;
 }
 
 /* ============================================
-   DOM patch elements
+   DOM patch elements — banners, badges, footer
+   Uses Obsidian CSS variables for theme compat.
    ============================================ */
 
 .ccoding-stereotype-badge {
-  font-size: 11px;
+  font-size: var(--font-smallest);
   font-weight: 600;
   text-align: center;
   padding: 2px 8px;
   letter-spacing: 0.5px;
-  color: white;
-}
-
-.ccoding-node-class .ccoding-stereotype-badge {
-  background: #8b5cf6;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
 }
 
 .ccoding-proposed-banner {
-  font-size: 11px;
+  font-size: var(--font-smallest);
   font-weight: 600;
   text-align: center;
   padding: 4px 8px;
   letter-spacing: 1px;
-  color: white;
-  background: repeating-linear-gradient(
-    45deg,
-    #8b5cf6,
-    #8b5cf6 10px,
-    #7c3aed 10px,
-    #7c3aed 20px
-  );
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  opacity: 0.85;
 }
 
 .ccoding-stale-banner {
-  font-size: 11px;
+  font-size: var(--font-smallest);
   font-weight: 600;
   text-align: center;
   padding: 4px 8px;
   letter-spacing: 1px;
-  color: white;
-  background: #ca8a04;
+  color: var(--text-on-accent);
+  background: var(--text-warning);
 }
 
 .ccoding-rationale-footer {
-  font-size: 11px;
+  font-size: var(--font-smallest);
   font-style: italic;
   padding: 8px 12px;
-  border-top: 1px dashed #334155;
-  color: #94a3b8;
-  background: rgba(139, 92, 246, 0.05);
+  border-top: 1px dashed var(--background-modifier-border);
+  color: var(--text-muted);
 }
 
 .ccoding-rationale-footer .ccoding-rationale-prefix {
-  color: #a78bfa;
+  color: var(--text-accent);
   font-weight: 600;
   font-style: normal;
 }

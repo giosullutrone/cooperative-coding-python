@@ -3,17 +3,22 @@ import { parseCcodingMetadata, parseEdgeMetadata } from "../types";
 import type { PluginSettings } from "../types";
 import { nodeClasses, edgeClasses } from "./class-mapper";
 import { applyNodePatches, removeAllPatches } from "./patches";
-import { injectMarkers, removeMarkers } from "./markers";
 
 const PROCESSED_ATTR = "data-ccoding-processed";
 
 /**
  * Manages CSS class injection and MutationObserver for the canvas.
+ *
+ * Uses Obsidian's internal canvas API (canvas.nodes / canvas.edges Maps)
+ * to access DOM elements directly, since Obsidian does not set data-id
+ * attributes on .canvas-node elements.
  */
 export class StyleInjector {
   private observer: MutationObserver | null = null;
   private canvasEl: HTMLElement | null = null;
+  private canvas: any = null;
   private settings: PluginSettings;
+  private applying = false;
 
   constructor(settings: PluginSettings) {
     this.settings = settings;
@@ -25,34 +30,21 @@ export class StyleInjector {
 
   /**
    * Attach to a canvas view element. Scans existing nodes and starts observing.
+   * Accepts the Obsidian internal canvas object (with .nodes and .edges Maps).
    */
-  attach(canvasEl: HTMLElement, canvasData: any): void {
+  attach(canvasEl: HTMLElement, canvas: any): void {
     this.detach();
     this.canvasEl = canvasEl;
+    this.canvas = canvas;
 
-    // Build a lookup from node/edge id → ccoding metadata
-    const nodeMetaMap = this.buildNodeMetaMap(canvasData);
-    const edgeMetaMap = this.buildEdgeMetaMap(canvasData);
+    // Initial styling pass
+    this.applyAllStyling();
 
-    // Process all existing nodes
-    this.processAllNodes(canvasEl, nodeMetaMap);
-    this.processAllEdges(canvasEl, edgeMetaMap);
-
-    // Inject SVG markers
-    const svgEl = canvasEl.querySelector("svg");
-    if (svgEl) {
-      injectMarkers(svgEl);
-    }
-
-    // Observe for new/changed DOM elements (viewport virtualization)
-    this.observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const added of mutation.addedNodes) {
-          if (added instanceof HTMLElement) {
-            this.processAddedElement(added, nodeMetaMap, edgeMetaMap);
-          }
-        }
-      }
+    // Observe for new/changed DOM elements (viewport virtualization).
+    // When Obsidian scrolls, it adds/removes node elements — re-apply styling.
+    // The `applying` guard prevents feedback loops from our own DOM changes.
+    this.observer = new MutationObserver(() => {
+      if (!this.applying) this.applyAllStyling();
     });
     this.observer.observe(canvasEl, { childList: true, subtree: true });
   }
@@ -67,7 +59,6 @@ export class StyleInjector {
     }
     if (this.canvasEl) {
       removeAllPatches(this.canvasEl);
-      removeMarkers(this.canvasEl);
       // Remove ccoding classes
       this.canvasEl
         .querySelectorAll(`[${PROCESSED_ATTR}]`)
@@ -81,106 +72,53 @@ export class StyleInjector {
         });
       this.canvasEl = null;
     }
+    this.canvas = null;
   }
 
-  private buildNodeMetaMap(canvasData: any): Map<string, any> {
-    const map = new Map<string, any>();
-    if (canvasData?.nodes) {
-      for (const node of canvasData.nodes) {
-        const meta = parseCcodingMetadata(node.ccoding);
-        if (meta) map.set(node.id, meta);
+  /**
+   * Apply styling to all unprocessed nodes and edges using the
+   * canvas object's internal Maps for direct element access.
+   */
+  private applyAllStyling(): void {
+    if (!this.canvas) return;
+    this.applying = true;
+
+    // Style nodes via canvas.nodes Map
+    if (this.canvas.nodes) {
+      for (const [, node] of this.canvas.nodes) {
+        const el = node.nodeEl as HTMLElement | undefined;
+        if (!el || el.hasAttribute(PROCESSED_ATTR)) continue;
+
+        const meta = parseCcodingMetadata(node.unknownData?.ccoding);
+        if (!meta) continue;
+
+        const classes = nodeClasses(meta, this.settings.showRejectedNodes);
+        el.classList.add(...classes);
+        el.setAttribute(PROCESSED_ATTR, "true");
+
+        if (meta.kind) el.dataset.ccodingKind = meta.kind;
+        if (meta.status) el.dataset.ccodingStatus = meta.status;
+
+        applyNodePatches(el, meta);
       }
     }
-    return map;
-  }
 
-  private buildEdgeMetaMap(canvasData: any): Map<string, any> {
-    const map = new Map<string, any>();
-    if (canvasData?.edges) {
-      for (const edge of canvasData.edges) {
-        const meta = parseEdgeMetadata(edge.ccoding);
-        if (meta) map.set(edge.id, meta);
+    // Style edges via canvas.edges Map
+    if (this.canvas.edges) {
+      for (const [, edge] of this.canvas.edges) {
+        // Obsidian edges use .lineGroupEl or .wrapperEl for the DOM element
+        const el = (edge.lineGroupEl ?? edge.wrapperEl ?? edge.edgeEl) as HTMLElement | undefined;
+        if (!el || el.hasAttribute(PROCESSED_ATTR)) continue;
+
+        const meta = parseEdgeMetadata(edge.unknownData?.ccoding);
+        if (!meta) continue;
+
+        const classes = edgeClasses(meta);
+        el.classList.add(...classes);
+        el.setAttribute(PROCESSED_ATTR, "true");
       }
     }
-    return map;
-  }
 
-  private processAllNodes(
-    container: HTMLElement,
-    metaMap: Map<string, any>,
-  ): void {
-    // Obsidian canvas nodes have a data-id attribute
-    container
-      .querySelectorAll<HTMLElement>(".canvas-node")
-      .forEach((el) => {
-        this.applyNodeStyling(el, metaMap);
-      });
-  }
-
-  private processAllEdges(
-    container: HTMLElement,
-    metaMap: Map<string, any>,
-  ): void {
-    container
-      .querySelectorAll<HTMLElement>(".canvas-edge")
-      .forEach((el) => {
-        this.applyEdgeStyling(el, metaMap);
-      });
-  }
-
-  private processAddedElement(
-    el: HTMLElement,
-    nodeMetaMap: Map<string, any>,
-    edgeMetaMap: Map<string, any>,
-  ): void {
-    if (el.classList.contains("canvas-node")) {
-      this.applyNodeStyling(el, nodeMetaMap);
-    } else if (el.classList.contains("canvas-edge")) {
-      this.applyEdgeStyling(el, edgeMetaMap);
-    }
-    // Also check children (nodes may be nested in containers)
-    el.querySelectorAll<HTMLElement>(".canvas-node").forEach((n) =>
-      this.applyNodeStyling(n, nodeMetaMap),
-    );
-    el.querySelectorAll<HTMLElement>(".canvas-edge").forEach((e) =>
-      this.applyEdgeStyling(e, edgeMetaMap),
-    );
-  }
-
-  private applyNodeStyling(
-    el: HTMLElement,
-    metaMap: Map<string, any>,
-  ): void {
-    if (el.hasAttribute(PROCESSED_ATTR)) return;
-    const id = el.dataset.id;
-    if (!id) return;
-    const meta = metaMap.get(id);
-    if (!meta) return;
-
-    const classes = nodeClasses(meta, this.settings.showRejectedNodes);
-    el.classList.add(...classes);
-    el.setAttribute(PROCESSED_ATTR, "true");
-
-    // Set namespaced data attributes
-    if (meta.kind) el.dataset.ccodingKind = meta.kind;
-    if (meta.status) el.dataset.ccodingStatus = meta.status;
-
-    // Apply DOM patches (badges, banners, footers)
-    applyNodePatches(el, meta);
-  }
-
-  private applyEdgeStyling(
-    el: HTMLElement,
-    metaMap: Map<string, any>,
-  ): void {
-    if (el.hasAttribute(PROCESSED_ATTR)) return;
-    const id = el.dataset.id;
-    if (!id) return;
-    const meta = metaMap.get(id);
-    if (!meta) return;
-
-    const classes = edgeClasses(meta);
-    el.classList.add(...classes);
-    el.setAttribute(PROCESSED_ATTR, "true");
+    this.applying = false;
   }
 }

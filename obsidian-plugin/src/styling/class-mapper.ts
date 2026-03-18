@@ -1,26 +1,12 @@
 // src/styling/class-mapper.ts
 import type { CcodingMetadata, EdgeMetadata } from "../types";
 
-const KIND_CLASS_MAP: Record<string, string> = {
-  class: "ccoding-node-class",
-  method: "ccoding-node-method",
-  field: "ccoding-node-field",
-  package: "ccoding-node-package",
-};
-
-const RELATION_CLASS_MAP: Record<string, string> = {
-  inherits: "ccoding-edge-inherits",
-  implements: "ccoding-edge-implements",
-  composes: "ccoding-edge-composes",
-  depends: "ccoding-edge-depends",
-  calls: "ccoding-edge-calls",
-  detail: "ccoding-edge-detail",
-  context: "ccoding-edge-context",
-};
-
 /**
  * Compute CSS class list for a ccoding canvas node.
  * Pure function — no DOM or Obsidian dependency.
+ *
+ * Accepted nodes get no extra styling (they look like normal canvas nodes).
+ * Only proposed/rejected/stale get visual treatment.
  */
 export function nodeClasses(
   meta: CcodingMetadata,
@@ -28,12 +14,6 @@ export function nodeClasses(
 ): string[] {
   const classes: string[] = ["ccoding-node"];
 
-  // Kind-based styling
-  if (meta.kind && KIND_CLASS_MAP[meta.kind]) {
-    classes.push(KIND_CLASS_MAP[meta.kind]);
-  }
-
-  // Status-based styling
   switch (meta.status) {
     case "proposed":
       classes.push("ccoding-ghost");
@@ -57,13 +37,10 @@ export function nodeClasses(
 
 /**
  * Compute CSS class list for a ccoding canvas edge.
+ * Only ghost edges get extra styling.
  */
 export function edgeClasses(meta: EdgeMetadata): string[] {
   const classes: string[] = ["ccoding-edge"];
-
-  if (RELATION_CLASS_MAP[meta.relation]) {
-    classes.push(RELATION_CLASS_MAP[meta.relation]);
-  }
 
   if (meta.status === "proposed") {
     classes.push("ccoding-ghost");

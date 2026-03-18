@@ -185,11 +185,11 @@ export default class CooperativeCodingPlugin extends Plugin {
     // Detach previous selection listener if we're re-attaching
     this.detachSelectionListener();
 
-    // Read canvas data
+    // Read canvas data for context highlighter (needs raw JSON structure)
     const canvasData = canvas.getData?.() || { nodes: [], edges: [] };
 
-    // Attach styling
-    this.injector.attach(canvasEl, canvasData);
+    // Attach styling — pass the internal canvas object for direct DOM access
+    this.injector.attach(canvasEl, canvas);
 
     // Build context highlight cache
     this.highlighter.buildCache(canvasData);
