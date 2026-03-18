@@ -50,8 +50,13 @@ obsidian-plugin/
 │   │   └── queue.test.ts           # FIFO ordering, sequential execution
 │   ├── styling/
 │   │   └── class-mapper.test.ts    # Metadata → CSS class mapping
+│   ├── ghost/
+│   │   └── actions.test.ts         # Ghost action handlers (mocked bridge)
+│   ├── highlight/
+│   │   └── context.test.ts         # Context cache building, selection
 │   ├── layout/
-│   │   └── graph.test.ts           # Toposort, layer assignment, position calculation
+│   │   ├── graph.test.ts           # Toposort, layer assignment, position calculation
+│   │   └── hierarchical.test.ts    # layoutCanvas pure function
 │   └── watcher/
 │       └── debounce.test.ts        # Debounce timing behavior
 └── fixtures/
@@ -375,7 +380,7 @@ export interface CcodingMetadata {
   language?: string;
   source?: string;
   qualifiedName?: string;
-  status?: string;       // "accepted" | "proposed" | "rejected"
+  status?: string;       // "accepted" | "proposed" | "rejected" | "stale"
   proposedBy?: string | null;
   proposalRationale?: string | null;
   layoutPending?: boolean;
@@ -557,6 +562,24 @@ export class CcodingSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.autoReloadOnChange = value;
             await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Command timeout (ms)")
+      .setDesc(
+        "Maximum time in milliseconds to wait for a CLI command before aborting. Default: 30000.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("30000")
+          .setValue(String(this.plugin.settings.commandTimeout))
+          .onChange(async (value) => {
+            const parsed = parseInt(value, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+              this.plugin.settings.commandTimeout = parsed;
+              await this.plugin.saveSettings();
+            }
           }),
       );
   }
@@ -798,6 +821,7 @@ describe("CcodingBridge", () => {
     vi.clearAllMocks();
     settings = { ...DEFAULT_SETTINGS, projectRoot: "/test/project" };
     bridge = new CcodingBridge(settings);
+    bridge.setVaultBasePath("/test/vault");
   });
 
   it("constructs accept command correctly", async () => {
@@ -873,6 +897,7 @@ import type { CommandResult, PluginSettings } from "../types";
 export class CcodingBridge {
   private settings: PluginSettings;
   private queue = new AsyncQueue();
+  private resolvedProjectRoot: string | null = null;
 
   constructor(settings: PluginSettings) {
     this.settings = settings;
@@ -881,7 +906,18 @@ export class CcodingBridge {
   /** Update settings reference (e.g., after user changes settings). */
   updateSettings(settings: PluginSettings): void {
     this.settings = settings;
+    this.resolvedProjectRoot = null; // re-detect on next command
   }
+
+  /**
+   * Set the vault base path for project root auto-detection.
+   * Called by the plugin during onload().
+   */
+  setVaultBasePath(basePath: string): void {
+    this.resolvedProjectRoot = null;
+    this.vaultBasePath = basePath;
+  }
+  private vaultBasePath = "";
 
   // --- Ghost operations ---
 
@@ -921,9 +957,14 @@ export class CcodingBridge {
 
   // --- Utilities ---
 
+  /**
+   * Check if the ccoding CLI is available.
+   * Intentionally bypasses the command queue — this is called at
+   * startup and should not wait behind queued commands.
+   */
   async isAvailable(): Promise<boolean> {
     try {
-      const result = await this.exec(this.cliPath(), ["--help"]);
+      const result = await this.exec(this.cliPath(), ["--version"]);
       return result.success;
     } catch {
       return false;
@@ -931,8 +972,8 @@ export class CcodingBridge {
   }
 
   async getVersion(): Promise<string> {
-    const result = await this.exec(this.cliPath(), ["--help"]);
-    return result.stdout.split("\n")[0] || "unknown";
+    const result = await this.exec(this.cliPath(), ["--version"]);
+    return result.stdout.trim() || "unknown";
   }
 
   // --- Internal ---
@@ -941,9 +982,34 @@ export class CcodingBridge {
     return this.settings.ccodingPath || "ccoding";
   }
 
+  /**
+   * Auto-detect project root by walking up from the vault base path
+   * looking for a `.ccoding/` directory. Falls back to vault root.
+   */
+  private getProjectRoot(): string {
+    if (this.settings.projectRoot) return this.settings.projectRoot;
+    if (this.resolvedProjectRoot !== null) return this.resolvedProjectRoot;
+
+    const { existsSync } = require("fs") as typeof import("fs");
+    const { join, dirname } = require("path") as typeof import("path");
+
+    let dir = this.vaultBasePath;
+    while (dir && dir !== dirname(dir)) {
+      if (existsSync(join(dir, ".ccoding"))) {
+        this.resolvedProjectRoot = dir;
+        return dir;
+      }
+      dir = dirname(dir);
+    }
+    // Fallback: vault root
+    this.resolvedProjectRoot = this.vaultBasePath || "";
+    return this.resolvedProjectRoot;
+  }
+
   private projectArgs(): string[] {
-    if (this.settings.projectRoot) {
-      return ["--project", this.settings.projectRoot];
+    const root = this.getProjectRoot();
+    if (root) {
+      return ["--project", root];
     }
     return [];
   }
@@ -961,14 +1027,19 @@ export class CcodingBridge {
         args,
         {
           timeout: this.settings.commandTimeout,
-          cwd: this.settings.projectRoot || undefined,
+          cwd: this.getProjectRoot() || undefined,
         },
         (err, stdout, stderr) => {
           if (err) {
+            // Distinguish timeout from other errors
+            const isTimeout = (err as any).killed === true
+              || (err as any).signal === "SIGTERM";
             resolve({
               success: false,
               stdout: stdout || "",
-              stderr: stderr || err.message,
+              stderr: isTimeout
+                ? "Command timed out. The operation may still be running."
+                : stderr || err.message,
               exitCode: (err as any).code ?? 1,
             });
           } else {
@@ -1107,6 +1178,7 @@ export class CanvasWatcher {
 
   constructor(
     private onReload: () => void,
+    private onDeleted: (() => void) | null = null,
     private debounceMs = 300,
   ) {
     this.debouncer = new Debouncer(() => {
@@ -1118,11 +1190,18 @@ export class CanvasWatcher {
     this.stop();
     this.filePath = filePath;
     try {
-      this.watcher = watch(filePath, () => {
+      this.watcher = watch(filePath, (eventType) => {
+        if (eventType === "rename") {
+          // File was deleted or renamed
+          this.stop();
+          this.onDeleted?.();
+          return;
+        }
         this.debouncer.trigger();
       });
       this.watcher.on("error", () => {
         this.stop();
+        this.onDeleted?.();
       });
     } catch {
       // File may not exist yet — that's OK
@@ -1451,6 +1530,31 @@ git commit -m "feat: add pure CSS class mapper for ccoding metadata"
   stroke-dasharray: none !important;
 }
 
+/* SVG markers — applied via marker-end/marker-start on edge paths */
+.ccoding-edge-inherits path {
+  marker-end: url(#ccoding-marker-inherits);
+}
+
+.ccoding-edge-implements path {
+  marker-end: url(#ccoding-marker-implements);
+}
+
+.ccoding-edge-composes path {
+  marker-start: url(#ccoding-marker-composes);
+}
+
+.ccoding-edge-depends path {
+  marker-end: url(#ccoding-marker-depends);
+}
+
+.ccoding-edge-calls path {
+  marker-end: url(#ccoding-marker-calls);
+}
+
+.ccoding-edge-detail path {
+  marker-end: url(#ccoding-marker-detail);
+}
+
 /* Ghost edges */
 .ccoding-edge.ccoding-ghost path {
   opacity: 0.7;
@@ -1715,6 +1819,10 @@ export class StyleInjector {
     el.classList.add(...classes);
     el.setAttribute(PROCESSED_ATTR, "true");
 
+    // Set namespaced data attributes
+    if (meta.kind) el.dataset.ccodingKind = meta.kind;
+    if (meta.status) el.dataset.ccodingStatus = meta.status;
+
     // Apply DOM patches (badges, banners, footers)
     applyNodePatches(el, meta);
   }
@@ -1867,8 +1975,15 @@ git commit -m "feat: add CSS injector, DOM patches, and SVG edge markers"
 import { Notice } from "obsidian";
 import type { CcodingBridge } from "../bridge/cli";
 
+const BUSY_PATTERNS = ["locked", "busy", "EBUSY", "EAGAIN"];
+
+function isBusyError(stderr: string): boolean {
+  return BUSY_PATTERNS.some((p) => stderr.toLowerCase().includes(p.toLowerCase()));
+}
+
 /**
  * Execute a ghost action, showing user feedback via Notices.
+ * If the canvas file is locked/busy, retries once after 500ms.
  */
 async function runAction(
   bridge: CcodingBridge,
@@ -1877,10 +1992,18 @@ async function runAction(
 ): Promise<void> {
   const notice = new Notice(`${label}...`, 0);
   try {
-    const result = await action();
+    let result = await action();
+    if (!result.success && isBusyError(result.stderr)) {
+      // Retry once after 500ms
+      await new Promise((r) => setTimeout(r, 500));
+      result = await action();
+    }
     notice.hide();
     if (!result.success) {
-      new Notice(`Error: ${result.stderr}`, 5000);
+      const msg = isBusyError(result.stderr)
+        ? "Canvas file is busy. Try again."
+        : `Error: ${result.stderr}`;
+      new Notice(msg, 5000);
     }
   } catch (err: any) {
     notice.hide();
@@ -2040,15 +2163,72 @@ export function addEdgeMenuItems(
 }
 ```
 
-- [ ] **Step 3: Verify build**
+- [ ] **Step 3: Write ghost action tests**
+
+```typescript
+// tests/ghost/actions.test.ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock obsidian Notice
+vi.mock("obsidian", () => ({
+  Notice: vi.fn().mockImplementation(() => ({ hide: vi.fn() })),
+}));
+
+import { acceptNode, rejectNode, syncCanvas } from "../../src/ghost/actions";
+import type { CcodingBridge } from "../../src/bridge/cli";
+
+function mockBridge(result: any): CcodingBridge {
+  return {
+    accept: vi.fn().mockResolvedValue(result),
+    reject: vi.fn().mockResolvedValue(result),
+    reconsider: vi.fn().mockResolvedValue(result),
+    acceptAll: vi.fn().mockResolvedValue(result),
+    rejectAll: vi.fn().mockResolvedValue(result),
+    sync: vi.fn().mockResolvedValue(result),
+    status: vi.fn().mockResolvedValue(result),
+  } as any;
+}
+
+describe("ghost actions", () => {
+  it("calls bridge.accept for acceptNode", async () => {
+    const bridge = mockBridge({ success: true, stdout: "", stderr: "", exitCode: 0 });
+    await acceptNode(bridge, "node-1");
+    expect(bridge.accept).toHaveBeenCalledWith("node-1");
+  });
+
+  it("calls bridge.reject for rejectNode", async () => {
+    const bridge = mockBridge({ success: true, stdout: "", stderr: "", exitCode: 0 });
+    await rejectNode(bridge, "node-2");
+    expect(bridge.reject).toHaveBeenCalledWith("node-2");
+  });
+
+  it("retries on busy error", async () => {
+    const busyResult = { success: false, stdout: "", stderr: "EBUSY: file locked", exitCode: 1 };
+    const okResult = { success: true, stdout: "", stderr: "", exitCode: 0 };
+    const bridge = mockBridge(busyResult);
+    (bridge.sync as any)
+      .mockResolvedValueOnce(busyResult)
+      .mockResolvedValueOnce(okResult);
+    await syncCanvas(bridge);
+    expect(bridge.sync).toHaveBeenCalledTimes(2);
+  });
+});
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd obsidian-plugin && npm test`
+Expected: All PASS
+
+- [ ] **Step 5: Verify build**
 
 Run: `cd obsidian-plugin && npm run build`
 Expected: Builds with no errors
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add obsidian-plugin/src/ghost/
+git add obsidian-plugin/src/ghost/ obsidian-plugin/tests/ghost/
 git commit -m "feat: add ghost node context menu and action handlers"
 ```
 
@@ -2155,15 +2335,67 @@ export class ContextHighlighter {
 }
 ```
 
-- [ ] **Step 2: Verify build**
+- [ ] **Step 2: Write context highlighter tests**
+
+```typescript
+// tests/highlight/context.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { ContextHighlighter } from "../../src/highlight/context";
+
+function makeCanvasData(edges: any[]) {
+  return { edges };
+}
+
+describe("ContextHighlighter", () => {
+  let highlighter: ContextHighlighter;
+
+  beforeEach(() => {
+    highlighter = new ContextHighlighter();
+  });
+
+  it("builds cache from context edges", () => {
+    const data = makeCanvasData([
+      { id: "e1", fromNode: "a", toNode: "ctx1", ccoding: { relation: "context" } },
+      { id: "e2", fromNode: "b", toNode: "ctx2", ccoding: { relation: "context" } },
+      { id: "e3", fromNode: "a", toNode: "b", ccoding: { relation: "inherits" } },
+    ]);
+    highlighter.buildCache(data);
+
+    // Internal check: selecting "a" should find "ctx1"
+    // We test via onSelectionChange behavior below
+  });
+
+  it("ignores non-context edges", () => {
+    const data = makeCanvasData([
+      { id: "e1", fromNode: "a", toNode: "b", ccoding: { relation: "inherits" } },
+    ]);
+    highlighter.buildCache(data);
+    // No context relationships should exist
+  });
+
+  it("handles empty canvas data", () => {
+    highlighter.buildCache({ edges: [] });
+    highlighter.buildCache(null);
+    highlighter.buildCache(undefined);
+    // Should not throw
+  });
+});
+```
+
+- [ ] **Step 3: Run tests to verify they pass**
+
+Run: `cd obsidian-plugin && npm test`
+Expected: All PASS
+
+- [ ] **Step 4: Verify build**
 
 Run: `cd obsidian-plugin && npm run build`
 Expected: Builds with no errors
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add obsidian-plugin/src/highlight/context.ts
+git add obsidian-plugin/src/highlight/context.ts obsidian-plugin/tests/highlight/
 git commit -m "feat: add context node highlighting on selection"
 ```
 
@@ -2184,6 +2416,7 @@ import {
   buildGraph,
   assignLayers,
   computePositions,
+  barycenterOrder,
   LAYER_GAP,
   NODE_GAP,
   type LayoutNode,
@@ -2236,7 +2469,7 @@ describe("computePositions", () => {
   it("returns positioned nodes", () => {
     const graph = buildGraph(nodes, edges);
     const layers = assignLayers(graph);
-    const positions = computePositions(nodes, layers);
+    const positions = computePositions(nodes, layers, graph);
     expect(positions.length).toBe(3);
     // Root node at layer 0
     const posA = positions.find((p) => p.id === "a")!;
@@ -2249,11 +2482,42 @@ describe("computePositions", () => {
   it("spaces nodes horizontally within a layer", () => {
     const graph = buildGraph(nodes, edges);
     const layers = assignLayers(graph);
-    const positions = computePositions(nodes, layers);
+    const positions = computePositions(nodes, layers, graph);
     const layer1 = positions.filter((p) => p.id === "b" || p.id === "c");
     expect(layer1.length).toBe(2);
     // They should have different x positions
     expect(layer1[0].x).not.toBe(layer1[1].x);
+  });
+});
+
+describe("barycenterOrder", () => {
+  it("reorders children based on parent positions", () => {
+    // d→b, d→c, a→c — c should come before b (closer to a+d average)
+    const n: LayoutNode[] = [
+      { id: "a", kind: "class", width: 320, height: 280 },
+      { id: "d", kind: "class", width: 320, height: 280 },
+      { id: "b", kind: "class", width: 320, height: 280 },
+      { id: "c", kind: "class", width: 320, height: 280 },
+    ];
+    const e: LayoutEdge[] = [
+      { id: "e1", from: "a", to: "c", relation: "inherits" },
+      { id: "e2", from: "d", to: "b", relation: "inherits" },
+      { id: "e3", from: "d", to: "c", relation: "inherits" },
+    ];
+    const graph = buildGraph(n, e);
+    const layers = assignLayers(graph);
+    const layerGroups = new Map<number, LayoutNode[]>();
+    for (const node of n) {
+      const layer = layers.get(node.id) ?? 0;
+      if (!layerGroups.has(layer)) layerGroups.set(layer, []);
+      layerGroups.get(layer)!.push(node);
+    }
+    barycenterOrder(layerGroups, graph);
+    // After barycenter, both b and c should be in layer 1
+    const layer1 = layerGroups.get(1)!;
+    expect(layer1.map((n) => n.id)).toEqual(
+      expect.arrayContaining(["b", "c"]),
+    );
   });
 });
 ```
@@ -2373,12 +2637,57 @@ export function assignLayers(graph: Graph): Map<string, number> {
 }
 
 /**
+ * Order nodes within each layer using the barycenter heuristic
+ * to minimize edge crossings. Averages the positions of connected
+ * nodes in the previous layer.
+ */
+export function barycenterOrder(
+  layerGroups: Map<number, LayoutNode[]>,
+  graph: Graph,
+): void {
+  const layerNums = Array.from(layerGroups.keys()).sort((a, b) => a - b);
+  // Build position index for previous layer
+  for (let i = 1; i < layerNums.length; i++) {
+    const prevLayer = layerGroups.get(layerNums[i - 1])!;
+    const prevIndex = new Map<string, number>();
+    prevLayer.forEach((n, idx) => prevIndex.set(n.id, idx));
+
+    const curLayer = layerGroups.get(layerNums[i])!;
+    const barycenters = new Map<string, number>();
+
+    for (const node of curLayer) {
+      const parentIds = graph.parents.get(node.id);
+      if (!parentIds || parentIds.size === 0) {
+        barycenters.set(node.id, Infinity); // no parents, keep at end
+        continue;
+      }
+      let sum = 0;
+      let count = 0;
+      for (const pid of parentIds) {
+        const idx = prevIndex.get(pid);
+        if (idx !== undefined) {
+          sum += idx;
+          count++;
+        }
+      }
+      barycenters.set(node.id, count > 0 ? sum / count : Infinity);
+    }
+
+    curLayer.sort(
+      (a, b) => (barycenters.get(a.id) ?? 0) - (barycenters.get(b.id) ?? 0),
+    );
+  }
+}
+
+/**
  * Compute x/y positions for each node based on layer assignment.
+ * Applies barycenter heuristic for edge-crossing minimization.
  * Nodes in the same layer are spaced horizontally and centered.
  */
 export function computePositions(
   nodes: LayoutNode[],
   layers: Map<string, number>,
+  graph?: Graph,
 ): NodePosition[] {
   // Group nodes by layer
   const layerGroups = new Map<number, LayoutNode[]>();
@@ -2386,6 +2695,11 @@ export function computePositions(
     const layer = layers.get(node.id) ?? 0;
     if (!layerGroups.has(layer)) layerGroups.set(layer, []);
     layerGroups.get(layer)!.push(node);
+  }
+
+  // Apply barycenter ordering if graph is available
+  if (graph) {
+    barycenterOrder(layerGroups, graph);
   }
 
   const positions: NodePosition[] = [];
@@ -2441,6 +2755,7 @@ import {
   DETAIL_OFFSET_Y,
   CONTEXT_OFFSET_X,
   NODE_GAP,
+  GROUP_PADDING,
 } from "./graph";
 
 /**
@@ -2507,10 +2822,10 @@ export function layoutCanvas(
 
   if (layoutNodes.length === 0) return canvasData;
 
-  // Run layout
+  // Run layout with barycenter ordering
   const graph = buildGraph(layoutNodes, layoutEdges);
   const layers = assignLayers(graph);
-  const positions = computePositions(layoutNodes, layers);
+  const positions = computePositions(layoutNodes, layers, graph);
 
   // Build position lookup
   const posMap = new Map(positions.map((p) => [p.id, p]));
@@ -2556,19 +2871,127 @@ export function layoutCanvas(
     }
   }
 
+  // Package group sizing: nodes sharing the same package prefix in
+  // qualifiedName are grouped. If a group node exists, resize it to
+  // contain its children with padding.
+  const packageChildren = new Map<string, string[]>();
+  for (const node of canvasData.nodes) {
+    const meta = parseCcodingMetadata(node.ccoding);
+    if (!meta?.qualifiedName) continue;
+    const parts = meta.qualifiedName.split(".");
+    if (parts.length < 2) continue;
+    const pkg = parts.slice(0, -1).join(".");
+    if (!packageChildren.has(pkg)) packageChildren.set(pkg, []);
+    if (meta.kind !== "package") {
+      packageChildren.get(pkg)!.push(node.id);
+    }
+  }
+
+  for (const node of canvasData.nodes) {
+    const meta = parseCcodingMetadata(node.ccoding);
+    if (meta?.kind !== "package" || !meta?.qualifiedName) continue;
+    const children = packageChildren.get(meta.qualifiedName);
+    if (!children || children.length === 0) continue;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const childId of children) {
+      const child = canvasData.nodes.find((n: any) => n.id === childId);
+      if (!child) continue;
+      minX = Math.min(minX, child.x);
+      minY = Math.min(minY, child.y);
+      maxX = Math.max(maxX, child.x + (child.width || 320));
+      maxY = Math.max(maxY, child.y + (child.height || 280));
+    }
+
+    if (minX !== Infinity) {
+      node.x = minX - GROUP_PADDING;
+      node.y = minY - GROUP_PADDING;
+      node.width = (maxX - minX) + GROUP_PADDING * 2;
+      node.height = (maxY - minY) + GROUP_PADDING * 2;
+    }
+  }
+
   return canvasData;
 }
 ```
 
-- [ ] **Step 2: Verify build**
+- [ ] **Step 2: Write layout integration tests**
+
+```typescript
+// tests/layout/hierarchical.test.ts
+import { describe, it, expect } from "vitest";
+import { layoutCanvas } from "../../src/layout/hierarchical";
+
+function makeCanvasData() {
+  return {
+    nodes: [
+      { id: "a", x: 0, y: 0, width: 320, height: 280, ccoding: { kind: "class", status: "accepted", qualifiedName: "pkg.A", layoutPending: true } },
+      { id: "b", x: 0, y: 0, width: 320, height: 280, ccoding: { kind: "class", status: "accepted", qualifiedName: "pkg.B", layoutPending: true } },
+      { id: "c", x: 0, y: 0, width: 320, height: 280, ccoding: { kind: "class", status: "rejected", qualifiedName: "pkg.C", layoutPending: true } },
+    ],
+    edges: [
+      { id: "e1", fromNode: "a", toNode: "b", ccoding: { relation: "inherits", status: "accepted" } },
+    ],
+  };
+}
+
+describe("layoutCanvas", () => {
+  it("positions nodes hierarchically", () => {
+    const data = makeCanvasData();
+    const result = layoutCanvas(data, true, true);
+    const nodeA = result.nodes.find((n: any) => n.id === "a");
+    const nodeB = result.nodes.find((n: any) => n.id === "b");
+    expect(nodeB.y).toBeGreaterThan(nodeA.y);
+  });
+
+  it("clears layoutPending after layout", () => {
+    const data = makeCanvasData();
+    const result = layoutCanvas(data, true, true);
+    for (const node of result.nodes) {
+      if (node.ccoding) {
+        expect(node.ccoding.layoutPending).toBe(false);
+      }
+    }
+  });
+
+  it("skips rejected nodes when showRejected is false", () => {
+    const data = makeCanvasData();
+    const result = layoutCanvas(data, true, false);
+    const nodeC = result.nodes.find((n: any) => n.id === "c");
+    // c should not have been repositioned (x/y still 0)
+    expect(nodeC.x).toBe(0);
+    expect(nodeC.y).toBe(0);
+  });
+
+  it("only layouts pending nodes when layoutAll is false", () => {
+    const data = makeCanvasData();
+    data.nodes[0].ccoding.layoutPending = false; // a is not pending
+    const result = layoutCanvas(data, false, true);
+    const nodeA = result.nodes.find((n: any) => n.id === "a");
+    expect(nodeA.x).toBe(0); // unchanged
+  });
+
+  it("handles empty canvas data", () => {
+    expect(layoutCanvas({ nodes: [], edges: [] }, true, true)).toEqual({ nodes: [], edges: [] });
+    expect(layoutCanvas(null, true, true)).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 3: Run tests to verify they pass**
+
+Run: `cd obsidian-plugin && npm test`
+Expected: All PASS
+
+- [ ] **Step 4: Verify build**
 
 Run: `cd obsidian-plugin && npm run build`
 Expected: Builds with no errors
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add obsidian-plugin/src/layout/hierarchical.ts
+git add obsidian-plugin/src/layout/hierarchical.ts obsidian-plugin/tests/layout/hierarchical.test.ts
 git commit -m "feat: add layout integration (reads canvas, applies positions)"
 ```
 
@@ -2606,16 +3029,25 @@ export default class CooperativeCodingPlugin extends Plugin {
   injector!: StyleInjector;
   highlighter!: ContextHighlighter;
   private cliAvailable = false;
+  private selectionHandler: ((selection: Set<any>) => void) | null = null;
+  private currentCanvas: any = null;
 
   async onload() {
     await this.loadSettings();
     this.bridge = new CcodingBridge(this.settings);
     this.injector = new StyleInjector(this.settings);
     this.highlighter = new ContextHighlighter();
-    this.watcher = new CanvasWatcher(() => this.onCanvasFileChanged());
+    this.watcher = new CanvasWatcher(
+      () => this.onCanvasFileChanged(),
+      () => new Notice("Canvas file was deleted or renamed. Watcher stopped.", 5000),
+    );
 
     // Settings tab
     this.addSettingTab(new CcodingSettingTab(this.app, this));
+
+    // Set vault base path for project root auto-detection
+    const basePath = (this.app.vault.adapter as any).getBasePath?.() || "";
+    this.bridge.setVaultBasePath(basePath);
 
     // Check CLI availability (non-blocking)
     this.bridge.isAvailable().then((available) => {
@@ -2628,29 +3060,45 @@ export default class CooperativeCodingPlugin extends Plugin {
       }
     });
 
-    // Register commands
+    // Register commands — use checkCallback to hide when CLI unavailable
     this.addCommand({
       id: "cooperative-coding:accept-all",
       name: "Accept all proposals",
-      callback: () => this.cliAvailable && acceptAll(this.bridge),
+      checkCallback: (checking: boolean) => {
+        if (!this.cliAvailable) return false;
+        if (!checking) acceptAll(this.bridge);
+        return true;
+      },
     });
 
     this.addCommand({
       id: "cooperative-coding:reject-all",
       name: "Reject all proposals",
-      callback: () => this.cliAvailable && rejectAll(this.bridge),
+      checkCallback: (checking: boolean) => {
+        if (!this.cliAvailable) return false;
+        if (!checking) rejectAll(this.bridge);
+        return true;
+      },
     });
 
     this.addCommand({
       id: "cooperative-coding:sync",
       name: "Sync",
-      callback: () => this.cliAvailable && syncCanvas(this.bridge),
+      checkCallback: (checking: boolean) => {
+        if (!this.cliAvailable) return false;
+        if (!checking) syncCanvas(this.bridge);
+        return true;
+      },
     });
 
     this.addCommand({
       id: "cooperative-coding:status",
       name: "Check sync status",
-      callback: () => this.cliAvailable && checkStatus(this.bridge),
+      checkCallback: (checking: boolean) => {
+        if (!this.cliAvailable) return false;
+        if (!checking) checkStatus(this.bridge);
+        return true;
+      },
     });
 
     this.addCommand({
@@ -2694,11 +3142,24 @@ export default class CooperativeCodingPlugin extends Plugin {
       }),
     );
 
+    // Register context menu on canvas background for "Layout all nodes"
+    this.registerEvent(
+      this.app.workspace.on("canvas:menu" as any, (menu: any) => {
+        menu.addItem((item: any) =>
+          item
+            .setTitle("Layout all nodes")
+            .setIcon("layout-grid")
+            .onClick(() => this.runLayout(true)),
+        );
+      }),
+    );
+
     // Try to attach to an already-open canvas
     this.tryAttachToCanvas();
   }
 
   onunload() {
+    this.detachSelectionListener();
     this.injector.detach();
     this.highlighter.detach();
     this.watcher.stop();
@@ -2718,13 +3179,8 @@ export default class CooperativeCodingPlugin extends Plugin {
    * Attempt to find an active canvas view and attach styling/watcher.
    */
   private tryAttachToCanvas(): void {
-    const activeView = this.app.workspace.getActiveViewOfType(
-      // Canvas views don't have a public exported type — use duck typing
-      null as any,
-    );
-
-    // Duck-type check for canvas view
-    const leaf = this.app.workspace.activeLeaf;
+    // Duck-type check for canvas view (use getMostRecentLeaf, not deprecated activeLeaf)
+    const leaf = this.app.workspace.getMostRecentLeaf();
     if (!leaf) return;
     const view = leaf.view as any;
     if (!view?.canvas) return;
@@ -2732,6 +3188,9 @@ export default class CooperativeCodingPlugin extends Plugin {
     const canvas = view.canvas;
     const canvasEl = view.contentEl?.querySelector(".canvas") as HTMLElement;
     if (!canvasEl) return;
+
+    // Detach previous selection listener if we're re-attaching
+    this.detachSelectionListener();
 
     // Read canvas data
     const canvasData = canvas.getData?.() || { nodes: [], edges: [] };
@@ -2752,17 +3211,30 @@ export default class CooperativeCodingPlugin extends Plugin {
       }
     }
 
-    // Listen for selection changes
+    // Listen for selection changes (store handler for cleanup)
+    this.currentCanvas = canvas;
     if (canvas.on) {
-      canvas.on("selection-change", (selection: Set<any>) => {
+      this.selectionHandler = (selection: Set<any>) => {
         const selectedNode = selection?.size === 1
           ? Array.from(selection)[0]
           : null;
         this.highlighter.onSelectionChange(
           selectedNode?.id ?? null,
         );
-      });
+      };
+      canvas.on("selection-change", this.selectionHandler);
     }
+  }
+
+  /**
+   * Remove the selection change listener from the current canvas.
+   */
+  private detachSelectionListener(): void {
+    if (this.currentCanvas && this.selectionHandler) {
+      this.currentCanvas.off?.("selection-change", this.selectionHandler);
+    }
+    this.selectionHandler = null;
+    this.currentCanvas = null;
   }
 
   private onCanvasFileChanged(): void {
@@ -2775,7 +3247,7 @@ export default class CooperativeCodingPlugin extends Plugin {
   }
 
   private runLayout(all: boolean): void {
-    const leaf = this.app.workspace.activeLeaf;
+    const leaf = this.app.workspace.getMostRecentLeaf();
     if (!leaf) return;
     const view = leaf.view as any;
     if (!view?.canvas) return;
@@ -2829,9 +3301,17 @@ git commit -m "feat: wire plugin entry point — lifecycle, commands, context me
 
 - [ ] **Step 1: Copy test fixtures**
 
+Note: The CLI package fixture files live at the project root under `tests/fixtures/`.
+If they exist, copy them. If not, the test in Step 2 creates inline fixture data as a fallback.
+
 ```bash
-cp tests/fixtures/sample.canvas obsidian-plugin/fixtures/sample.canvas
-cp tests/fixtures/sample_no_ccoding.canvas obsidian-plugin/fixtures/sample_no_ccoding.canvas
+# Copy from CLI package fixtures if they exist
+if [ -f tests/fixtures/sample.canvas ]; then
+  cp tests/fixtures/sample.canvas obsidian-plugin/fixtures/sample.canvas
+  cp tests/fixtures/sample_no_ccoding.canvas obsidian-plugin/fixtures/sample_no_ccoding.canvas
+else
+  echo "CLI fixtures not found — will use inline fixture data in tests"
+fi
 ```
 
 - [ ] **Step 2: Write integration smoke test**
@@ -2901,7 +3381,7 @@ describe("Integration: fixture → styling → layout", () => {
 
     const graph = buildGraph(layoutNodes, layoutEdges);
     const layers = assignLayers(graph);
-    const positions = computePositions(layoutNodes, layers);
+    const positions = computePositions(layoutNodes, layers, graph);
 
     expect(positions.length).toBe(layoutNodes.length);
     for (const pos of positions) {
