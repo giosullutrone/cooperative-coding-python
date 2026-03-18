@@ -27,6 +27,8 @@ The plugin is **self-contained** — it does not depend on Advanced Canvas or an
 - Conflict resolution logic (CLI's job)
 - Canvas data model or JSON format (defined by core spec + JSON Canvas v1.0)
 
+**Design note on event emission:** The core spec requires canvas tools to "emit events when nodes or edges are created, modified, or deleted (for sync triggers)." In the CooperativeCoding system, sync is on-demand — the user or agent explicitly triggers `ccoding sync`. The plugin does not automatically emit events or trigger sync on every canvas edit. Instead, the user runs sync when ready, and the CLI detects what changed via hash comparison. This avoids disruptive mid-editing syncs and keeps the plugin simpler. The `CooperativeCoding: Sync` command palette entry provides the manual trigger.
+
 ---
 
 ## 2. Plugin Structure
@@ -87,6 +89,7 @@ The plugin is **self-contained** — it does not depend on Advanced Canvas or an
 | `projectRoot` | `string` | `""` (auto-detect from `.ccoding/` dir) | Project root directory |
 | `showRejectedNodes` | `boolean` | `false` | Whether to show rejected ghost nodes |
 | `autoReloadOnChange` | `boolean` | `true` | Reload canvas when file changes externally |
+| `commandTimeout` | `number` | `30000` | CLI command timeout in milliseconds |
 
 Auto-detection logic for `projectRoot`: walk up from the vault root looking for a `.ccoding/` directory. If not found, use the vault root itself.
 
@@ -109,8 +112,12 @@ The plugin reads `ccoding.kind` and `ccoding.status` from each node and adds CSS
 | `status: "proposed"` | `ccoding-ghost` | Dashed border, reduced opacity (`0.7`) |
 | `status: "rejected"` | `ccoding-rejected` | Greyed out (`opacity: 0.3`), or `display: none` if `showRejectedNodes` is false |
 | `status: "accepted"` | `ccoding-accepted` | Normal rendering (default) |
+| stale (no code backing) | `ccoding-stale` | Muted yellow border (`#ca8a04`), strikethrough on node title, "STALE" banner |
 
 Classes are combined: a proposed class node gets both `ccoding-node-class` and `ccoding-ghost`.
+
+**Nodes with `ccoding.status` but no `ccoding.kind`** (proposed context nodes):
+Context nodes proposed by the agent carry a minimal `ccoding` object with only `status` and `proposedBy` (no `kind`). These nodes receive the `ccoding-ghost` class (dashed border, reduced opacity) and the proposed banner, but no kind-specific border color — they render with Obsidian's default node styling plus the ghost treatment overlay.
 
 ### 3.2 DOM Patches
 
@@ -128,6 +135,11 @@ DOM patches are injected elements that CSS alone cannot produce. The plugin appl
 - A footer section at the bottom of the node displaying the agent's rationale
 - Prefixed with a lightbulb indicator and "Agent rationale:"
 - Styled with a slightly different background to separate it from node content
+
+**Stale banner** (nodes marked as stale by the sync engine):
+- A banner at the top of the node reading "STALE" with a muted yellow background
+- Indicates the backing code was deleted or moved — the node has no code counterpart
+- The user can remove the node manually or keep it as a historical reference
 
 **Detail marker** (the `●` symbol):
 - The `●` marker in field/method lists already exists in the structured markdown content
@@ -343,13 +355,9 @@ The watcher detects external changes to `.canvas` files and triggers a canvas re
 
 ### 7.3 Reload Mechanism
 
-When an external change is detected, the plugin calls:
+When an external change is detected, the plugin reloads the canvas from disk. The exact Obsidian API call should be determined during implementation — possibilities include reading the file via `app.vault.read()` and repopulating the canvas data, or triggering the canvas view's internal reload method. The intent is to **re-read the file from disk**, not to save in-memory state.
 
-```typescript
-app.workspace.activeLeaf?.view?.requestSave?.()
-```
-
-This triggers Obsidian's internal canvas reload from disk. After reload, the `MutationObserver` (Section 3.3) detects new DOM elements and re-applies styling and DOM patches.
+After reload, the `MutationObserver` (Section 3.3) detects new DOM elements and re-applies styling and DOM patches.
 
 ### 7.4 Edge Cases
 
@@ -411,6 +419,7 @@ After positioning, the plugin updates each positioned node's `ccoding.layoutPend
 ### 8.4 Constraints
 
 - **Respects manual positioning**: by default, only moves nodes with `layoutPending: true`. The "Layout all" command overrides this.
+- **Excludes rejected/hidden nodes**: when `showRejectedNodes` is false, rejected nodes and their edges are excluded from layout calculations entirely. This prevents gaps from invisible nodes.
 - **No animation**: nodes snap to new positions. Obsidian's canvas doesn't provide animation primitives for node movement.
 - **No edge routing**: Obsidian handles edge path drawing natively. The layout only positions nodes; edges follow.
 
@@ -463,7 +472,14 @@ The plugin does not depend on Advanced Canvas but coexists with it:
 
 The plugin reads and writes standard JSON Canvas v1.0 format. The `ccoding` field on nodes and edges is an extension — it lives alongside standard fields and is ignored by tools that don't understand it. The plugin preserves all unknown fields during save (round-trip fidelity), matching the CLI's behavior.
 
-### 10.4 Obsidian API Stability
+### 10.4 Live Bridge
+
+The CLI extension includes an `ObsidianBridge` that can execute JavaScript in Obsidian's runtime via `obsidian eval`. This bridge operates through Obsidian's built-in eval mechanism and does not require plugin cooperation — the JS snippets call Obsidian's native APIs directly (e.g., triggering a canvas save/reload). The plugin does not need to expose a JavaScript API for the live bridge. The two integration paths are:
+
+- **CLI → Plugin direction**: CLI writes to `.canvas` file; plugin's file watcher detects the change and reloads. For live operations, the CLI may additionally call `obsidian eval` to trigger an immediate reload.
+- **Plugin → CLI direction**: Plugin calls `ccoding` CLI commands via shell exec (Section 6).
+
+### 10.5 Obsidian API Stability
 
 The plugin uses Obsidian's public plugin API where available. For canvas-specific operations (node DOM access, selection events), it relies on semi-public canvas APIs that may change between Obsidian versions. These touch points are isolated in `styling/patches.ts` so that Obsidian updates only require changes in one file.
 
