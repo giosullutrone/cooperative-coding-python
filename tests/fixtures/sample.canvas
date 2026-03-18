@@ -1,0 +1,48 @@
+{
+  "nodes": [
+    {
+      "id": "node-1",
+      "type": "text",
+      "x": 100,
+      "y": 200,
+      "width": 300,
+      "height": 400,
+      "text": "## DocumentParser",
+      "ccoding": {
+        "kind": "class",
+        "stereotype": "protocol",
+        "language": "python",
+        "source": "src/parsers/document.py",
+        "qualifiedName": "parsers.document.DocumentParser",
+        "status": "accepted",
+        "proposedBy": null,
+        "proposalRationale": null
+      }
+    },
+    {
+      "id": "note-1",
+      "type": "text",
+      "x": 500,
+      "y": 200,
+      "width": 200,
+      "height": 100,
+      "text": "Design rationale note"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "fromNode": "node-1",
+      "toNode": "note-1",
+      "fromSide": "right",
+      "toSide": "left",
+      "label": "rationale",
+      "ccoding": {
+        "relation": "context",
+        "status": "accepted",
+        "proposedBy": null,
+        "proposalRationale": null
+      }
+    }
+  ]
+}
