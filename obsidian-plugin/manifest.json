@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-cooperative-coding",
+  "name": "CooperativeCoding",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Visual canvas plugin for CooperativeCoding — renders ccoding nodes, ghost node UX, and CLI integration.",
+  "author": "CooperativeCoding",
+  "isDesktopOnly": true
+}
