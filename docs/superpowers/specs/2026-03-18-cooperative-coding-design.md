@@ -90,8 +90,8 @@ Every CooperativeCoding node and edge carries a `ccoding` object with semantic i
 
 Fields:
 
-- **`kind`**: `class` | `method` | `field` | `package` — the type of code element this node represents
-- **`stereotype`**: language-specific subtype (see language binding appendices for valid values per language). Common values: `class` | `interface` | `abstract` | `enum`
+- **`kind`**: `class` | `method` | `field` | `package` — the type of code element this node represents. Note: `field` is not a standalone node type — fields appear inline within class nodes' `### Fields` section. The `field` kind exists for edge targets and metadata queries.
+- **`stereotype`**: language-specific subtype. Each language binding defines its own valid values (e.g., Python: `protocol`, `dataclass`; TypeScript: `interface`, `type`). This is an open set — not limited to the examples here.
 - **`language`**: identifier for the programming language (e.g., `python`, `typescript`, `rust`, `go`)
 - **`source`**: relative path to the source file this node maps to
 - **`qualifiedName`**: fully qualified name in the target language (e.g., `parsers.document.DocumentParser`)
@@ -109,10 +109,13 @@ Fields:
   "ccoding": {
     "relation": "inherits",
     "status": "accepted",
-    "proposedBy": null
+    "proposedBy": null,
+    "proposalRationale": null
   }
 }
 ```
+
+Edges carry the same `status`, `proposedBy`, and `proposalRationale` fields as nodes. A proposed edge can carry a rationale (e.g., "This inheritance reduces duplication between these two classes").
 
 **Relation types:**
 

@@ -146,7 +146,7 @@ Concrete rules for bidirectional sync between canvas elements and Python code:
 
 When generating Python code from an accepted canvas node:
 
-- **File placement**: `ccoding.source` determines the file path. If not set, derive from `ccoding.qualifiedName` (e.g., `parsers.document.DocumentParser` → `src/parsers/document.py`)
+- **File placement**: `ccoding.source` determines the file path. If not set, derive from `ccoding.qualifiedName` relative to a configurable project source root (e.g., with source root `src/`, `parsers.document.DocumentParser` → `src/parsers/document.py`)
 - **Import management**: automatically add required imports based on stereotypes, edges, and type annotations
 - **Class skeleton**: generate class definition, docstring, and attribute stubs with type annotations. Method bodies are initially `...` (ellipsis) or `raise NotImplementedError`
 - **Method skeleton**: generate method signature with full type hints, docstring with all sections, and `...` body
@@ -156,7 +156,7 @@ When generating Python code from an accepted canvas node:
 When importing existing Python code to canvas:
 
 - **Class detection**: any `class` statement. Stereotype inferred from base classes (`Protocol` → `protocol`, `ABC` → `abstract`, `Enum` → `enum`) and decorators (`@dataclass` → `dataclass`)
-- **Method detection**: any `def` inside a class body. Skip dunder methods except `__init__`
+- **Method detection**: any `def` inside a class body. Skip dunder methods except those with architectural intent: `__init__`, `__post_init__` (dataclasses), `__enter__`/`__exit__` (context managers), `__call__`, `__iter__`/`__next__`
 - **Field detection**: class-level annotated assignments and `__init__` assignments with type annotations
 - **Relationship detection**: base classes → `inherits`/`implements` edges. Type annotations referencing other project classes → `composes`/`depends` edges. Import statements → `depends` edges
 - **Documentation extraction**: parse existing Google-style docstrings. Map standard sections (`Args:`, `Returns:`, `Raises:`, `Attributes:`) and custom sections (`Responsibility:`, `Pseudo Code:`, `Collaborators:`) to canvas node content
