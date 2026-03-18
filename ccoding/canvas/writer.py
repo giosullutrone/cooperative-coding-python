@@ -45,6 +45,10 @@ def _serialize_node(node: Node) -> dict:
     result.update(node._extra)
     return result
 
+def _filter_extra(extra: dict) -> dict:
+    """Filter out internal tracking keys (prefixed with _ccoding_) from _extra."""
+    return {k: v for k, v in extra.items() if not k.startswith("_ccoding_")}
+
 def _serialize_edge(edge: Edge) -> dict:
     result: dict = {
         "id": edge.id,
@@ -59,7 +63,7 @@ def _serialize_edge(edge: Edge) -> dict:
         result["label"] = edge.label
     if edge.ccoding is not None:
         result["ccoding"] = _serialize_edge_meta(edge.ccoding)
-    result.update(edge._extra)
+    result.update(_filter_extra(edge._extra))
     return result
 
 def write_canvas(canvas: Canvas, path: Path) -> None:

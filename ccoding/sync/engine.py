@@ -29,6 +29,7 @@ from ccoding.canvas.writer import write_canvas
 from ccoding.code.generator import generate_class
 from ccoding.code.parser import PythonAstParser, ClassElement
 from ccoding.config import load_config
+from ccoding.sync.conflict import ConflictResolution, resolve_conflict
 from ccoding.sync.differ import Conflict, SyncDiff, compute_diff
 from ccoding.sync.hasher import content_hash
 from ccoding.sync.state import (
@@ -325,9 +326,20 @@ def sync(
     result = SyncResult()
 
     # Handle conflicts
-    if diff.conflicts and not strategy:
-        result.conflicts = diff.conflicts
-        return result
+    if diff.conflicts:
+        for conflict in diff.conflicts:
+            resolution = resolve_conflict(conflict, strategy)
+            if resolution == ConflictResolution.USE_CANVAS:
+                # Treat as canvas-modified: regenerate code from canvas
+                diff.canvas_modified.append(conflict.element_name)
+            elif resolution == ConflictResolution.USE_CODE:
+                # Treat as code-modified: update canvas from code
+                diff.code_modified.append(conflict.element_name)
+            else:
+                # Manual — surface as unresolved conflict
+                result.conflicts.append(conflict)
+        if result.conflicts:
+            return result
 
     # Apply changes: code_added -> create new canvas nodes
     for qname in diff.code_added:

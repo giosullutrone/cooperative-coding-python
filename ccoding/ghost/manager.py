@@ -73,17 +73,13 @@ def propose_node(
         )
     else:
         # Context node — minimal metadata
-        meta = CcodingMetadata.__new__(CcodingMetadata)
-        # Use dataclass __init__ with only the fields we care about
-        meta.kind = "class"  # default but won't be meaningful
-        meta.stereotype = None
-        meta.language = None
-        meta.source = None
-        meta.qualified_name = None
-        meta.status = _PROPOSED
-        meta.proposed_by = proposed_by
-        meta.proposal_rationale = rationale
-        meta.layout_pending = False
+        meta = CcodingMetadata(
+            kind="class",
+            status=_PROPOSED,
+            proposed_by=proposed_by,
+            proposal_rationale=rationale,
+            layout_pending=False,
+        )
 
     node = Node(
         id=node_id,

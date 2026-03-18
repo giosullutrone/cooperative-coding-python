@@ -271,10 +271,6 @@ class PythonAstParser:
         elements: list[CodeElement] = []
         source_str = str(path)
 
-        for node in ast.walk(tree):
-            # Only process top-level classes (direct children of module)
-            pass
-
         # Walk only top-level statements for classes; imports at module level
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
