@@ -116,8 +116,37 @@ Fields:
 - **`depends`** — class uses another
 - **`calls`** — method calls another method (method call flow)
 - **`detail`** — class node → method detail node link (the ● connection)
+- **`context`** — links a context node (text/file/link) to a ccoding node for reference. Multiple context nodes can attach to the same target node.
 
-### 3.2 Rendering Layer: Self-Contained with Optional Compatibility
+### 3.2 Context Nodes
+
+Alongside `ccoding`-specific nodes (class, method, package), a CooperativeCoding canvas supports **standard JSON Canvas nodes** for collaboration context:
+
+- **Text nodes** — free-form notes for design rationale, decision logs, open questions, TODOs. Example: "We chose Protocol over ABC here because we don't need default implementations"
+- **File nodes** — embedded images, PDFs, diagrams from other tools, reference screenshots, architecture sketches, whiteboard photos
+- **Link nodes** — external URLs to documentation, API references, related repos, issue trackers
+
+Context nodes:
+
+- Have **no `ccoding` metadata by default** — they are plain JSON Canvas nodes
+- Are **not synced** to code — they exist only on the canvas as collaboration artifacts
+- Can be **connected via `context` edges** to `ccoding` nodes. Multiple context nodes can attach to the same target (e.g., a class node may have a rationale note, a reference PDF, and a whiteboard photo all linked to it)
+- Can be **proposed as ghosts** by the agent (e.g., the agent attaches a note explaining a design tradeoff, or links relevant documentation). In this case, the node carries a minimal `ccoding` object with only `status` and `proposedBy`:
+
+```json
+{
+  "id": "note-1",
+  "type": "text",
+  "x": 400, "y": 200, "width": 250, "height": 150,
+  "text": "Protocol chosen over ABC because...",
+  "ccoding": {
+    "status": "proposed",
+    "proposedBy": "agent"
+  }
+}
+```
+
+### 3.3 Rendering Layer: Self-Contained with Optional Compatibility
 
 CooperativeCoding implements its own canvas rendering extensions, patching only what it needs from Obsidian's Canvas internals. It does not require Advanced Canvas.
 
@@ -144,8 +173,11 @@ CooperativeCoding implements its own canvas rendering extensions, patching only 
 - **`depends`**: dashed line, open arrow
 - **`calls`**: dotted line, filled arrow
 - **`detail`**: solid line, circle endpoint
+- **`context`**: thin grey line, no arrow
 
-### 3.2.1 Clash Prevention Strategy
+**Context nodes** (text/file/link without `ccoding.kind`) render with standard Obsidian Canvas styling — we do not override their appearance. When a ccoding node is selected, its linked context nodes are visually highlighted to show the association. Multiple context nodes can attach to the same target.
+
+### 3.3.1 Clash Prevention Strategy
 
 **Namespace isolation:**
 
@@ -178,7 +210,7 @@ Canvas method call
 - We never use generic `.canvas-node` selectors without also requiring our namespace attribute
 - No `!important` overrides on shared properties
 
-### 3.3 Node Content: Structured Markdown
+### 3.4 Node Content: Structured Markdown
 
 The canvas node `text` field uses structured markdown that is both human-readable on the canvas and parseable for sync.
 
@@ -226,7 +258,7 @@ Transform raw source into a validated AST, applying all registered plugins in or
 
 **Package node:** Uses JSON Canvas group nodes with `ccoding.kind: "package"`. Label = module path (e.g., `parsers.document`). Contains child class nodes.
 
-### 3.4 Docstring Format (Python Implementation)
+### 3.5 Docstring Format (Python Implementation)
 
 The docstring in `.py` files mirrors the canvas node content. This is the bridge for bidirectional sync — changes to either side propagate through the sync engine.
 
@@ -283,7 +315,7 @@ def parse(self, source: str) -> AST:
 
 Custom sections added to standard Google style: **`Responsibility:`**, **`Pseudo Code:`**, and **`Collaborators:`** (for classes).
 
-### 3.5 Sync Mapping Summary
+### 3.6 Sync Mapping Summary
 
 | Canvas | Python Code |
 |---|---|
@@ -298,6 +330,8 @@ Custom sections added to standard Google style: **`Responsibility:`**, **`Pseudo
 | Edge `composes` | Field with composed type |
 | Edge `depends` | Import statement |
 | `ccoding.status: proposed` | Not yet in code (ghost) |
+| Context nodes (text/file/link) | Not synced — canvas-only collaboration artifacts |
+| Edge `context` | Not synced — canvas-only association |
 
 ---
 
