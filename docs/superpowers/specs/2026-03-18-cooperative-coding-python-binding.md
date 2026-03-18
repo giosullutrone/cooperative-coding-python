@@ -135,7 +135,7 @@ Concrete rules for bidirectional sync between canvas elements and Python code:
 | Package group | Python package directory with `__init__.py` |
 | Edge `inherits` | `class Foo(Bar):` |
 | Edge `implements` | `class Foo(SomeProtocol):` (Protocol inheritance) |
-| Edge `composes` | Class attribute with the composed type annotation |
+| Edge `composes` | Class attribute with the composed type annotation. Edge label carries the field name (e.g., `"plugins"` → `self.plugins: list[ParserPlugin]`) |
 | Edge `depends` | `import` / `from ... import` statement |
 | `ccoding.stereotype: protocol` | `typing.Protocol` base class |
 | `ccoding.stereotype: dataclass` | `@dataclasses.dataclass` decorator |

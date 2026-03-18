@@ -106,8 +106,9 @@ Fields:
   "id": "edge-1",
   "fromNode": "node-1", "toNode": "node-2",
   "fromSide": "bottom", "toSide": "top",
+  "label": "plugins — Applied sequentially during parse(). Order matters.",
   "ccoding": {
-    "relation": "inherits",
+    "relation": "composes",
     "status": "accepted",
     "proposedBy": null,
     "proposalRationale": null
@@ -116,6 +117,35 @@ Fields:
 ```
 
 Edges carry the same `status`, `proposedBy`, and `proposalRationale` fields as nodes. A proposed edge can carry a rationale (e.g., "This inheritance reduces duplication between these two classes").
+
+### 3.1.1 Edge Labels
+
+The JSON Canvas `label` field on edges is a key part of CooperativeCoding. Labels explain the *nature*, *purpose*, and *constraints* of a relationship — not just that a connection exists, but what it means.
+
+Labels can range from a short identifier to longer descriptive text:
+
+- **Short**: `"config"` — the field name for a composition
+- **Descriptive**: `"plugins — Ordered list applied sequentially during parse(). Order matters: each plugin sees the AST as modified by earlier plugins."`
+
+**Label conventions per relation type:**
+
+| Relation | Label Carries | Examples |
+|---|---|---|
+| `composes` | Field name + description of the composition semantics | `"config"`, `"plugins — Applied sequentially. Order matters."` |
+| `depends` | What is used and/or why | `"TokenStream — used for lexical analysis"` |
+| `calls` | When/why the call happens, constraints | `"After tokenization. Falls back to default parser on SkipError."` |
+| `inherits` | Nature or reason for the inheritance | `"Base parsing interface"` |
+| `implements` | Which contract is fulfilled, constraints | `"Serialization support — must handle circular refs"` |
+| `detail` | Method name | `"parse()"` |
+| `context` | Type of context | `"rationale"`, `"reference"`, `"API docs"` |
+
+Labels serve multiple purposes:
+
+- **Documentation** — the canvas becomes self-documenting. A reader can understand relationships by reading edge labels without opening any code.
+- **Design communication** — the agent uses labels on ghost edges to explain *why* it proposes a relationship. The human reads the label to evaluate the proposal.
+- **Sync information** — for `composes` edges, the label can carry the field name, giving the sync engine the mapping between the edge and the specific attribute in code.
+
+Labels are optional. An edge without a label still conveys the relationship through its `ccoding.relation` type and visual style. Labels add richness where it matters.
 
 **Relation types:**
 
