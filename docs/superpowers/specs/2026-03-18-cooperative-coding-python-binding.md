@@ -107,13 +107,37 @@ def parse(self, source: str) -> AST:
 | `Returns:` | `### Signature` OUT fields | Return value |
 | `Raises:` | `### Signature` RAISES fields | Exceptions |
 
-### 3.3 Custom Sections
+### 3.3 Field Documentation
 
-Three sections are added to the standard Google docstring style:
+When a field is promoted to its own detail node, its design information maps to a comment block above the field annotation in Python:
 
-- **`Responsibility:`** — appears on both class and method docstrings. Describes what this element *owns* in the system. This is the most important section for design — it defines the boundaries.
+```python
+class DocumentParser(Protocol):
+    # Responsibility: Holds parser configuration including tokenizer
+    # settings and output format preferences.
+    # Constraints: Immutable after initialization. Validated on
+    # construction via ParserConfig.validate().
+    # Default: ParserConfig.default()
+    config: ParserConfig
+```
+
+**Section mapping:**
+
+| Field Detail Section | Python Code | Purpose |
+|---|---|---|
+| `### Responsibility` | Comment block above field | What this field represents |
+| `### Type` | Type annotation | The field's type |
+| `### Constraints` | Comment block above field | Invariants and validation rules |
+| `### Default` | Default value assignment or comment | Default value |
+
+### 3.4 Custom Sections
+
+Four sections are added to the standard Google docstring style:
+
+- **`Responsibility:`** — appears on class, method, and field documentation. Describes what this element *owns* in the system. This is the most important section for design — it defines the boundaries.
 - **`Pseudo Code:`** — appears on method docstrings only. Numbered step-by-step description of the algorithm. Deliberately not real code — it describes *what* happens, not *how* in language-specific terms.
 - **`Collaborators:`** — appears on class docstrings only. Lists other classes this one works with and why. On the canvas, this information is primarily conveyed through edges, but the docstring captures it in prose for readability in code.
+- **`Constraints:`** — appears on field documentation only. Describes invariants, validation rules, and immutability requirements.
 
 These sections are designed to be safely ignored by standard Python documentation tools that don't recognize them — they simply appear as additional text in the rendered docstring.
 

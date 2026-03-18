@@ -90,7 +90,7 @@ Every CooperativeCoding node and edge carries a `ccoding` object with semantic i
 
 Fields:
 
-- **`kind`**: `class` | `method` | `field` | `package` — the type of code element this node represents. Note: `field` is not a standalone node type — fields appear inline within class nodes' `### Fields` section. The `field` kind exists for edge targets and metadata queries.
+- **`kind`**: `class` | `method` | `field` | `package` — the type of code element this node represents. `method` and `field` follow the progressive detail principle: they appear inline within their class node by default, but can be promoted to their own detail nodes when they need attention or are edge targets (see Section 3.3).
 - **`stereotype`**: language-specific subtype. Each language binding defines its own valid values (e.g., Python: `protocol`, `dataclass`; TypeScript: `interface`, `type`). This is an open set — not limited to the examples here.
 - **`language`**: identifier for the programming language (e.g., `python`, `typescript`, `rust`, `go`)
 - **`source`**: relative path to the source file this node maps to
@@ -200,9 +200,9 @@ The canvas node `text` field uses structured markdown that is both human-readabl
 > Responsible for parsing raw documents into structured AST nodes
 
 ### Fields
-- config: `ParserConfig`
+- config: `ParserConfig` ●
 - _cache: `Map<String, AST>`
-- plugins: `List<ParserPlugin>`
+- plugins: `List<ParserPlugin>` ●
 
 ### Methods
 - parse(source: `String`) -> `AST` ●
@@ -233,9 +233,30 @@ Transform raw source into a validated AST, applying all registered plugins in or
 7. Cache and return
 ```
 
+**Field detail node content** (opt-in, for fields that need design attention):
+
+```markdown
+## DocumentParser.config
+
+### Responsibility
+Holds parser configuration including tokenizer settings and output format preferences.
+
+### Type
+`ParserConfig`
+
+### Constraints
+- Immutable after parser initialization
+- Validated on construction via ParserConfig.validate()
+
+### Default
+ParserConfig.default()
+```
+
 **Package node:** Uses JSON Canvas group nodes with `ccoding.kind: "package"`. Label = module/package path. Contains child class nodes.
 
-The structured markdown sections (`### Responsibility`, `### Pseudo Code`, `### Signature`, `### Fields`, `### Methods`) are part of the spec. Language bindings define how these map to language-specific documentation formats (e.g., Python docstrings, JSDoc comments, Rust doc comments).
+**Progressive detail summary:** Both fields and methods follow the same pattern. They appear inline in the class node by default, marked with ● if they have a detail node. The detail node is connected to the class via a `detail` edge. Only elements that need design attention (complex logic, constraints, edge targets) get promoted.
+
+The structured markdown sections (`### Responsibility`, `### Pseudo Code`, `### Signature`, `### Fields`, `### Methods`, `### Type`, `### Constraints`, `### Default`) are part of the spec. Language bindings define how these map to language-specific documentation formats (e.g., Python docstrings, JSDoc comments, Rust doc comments).
 
 ### 3.4 Recommended Visual Representation
 
@@ -244,7 +265,8 @@ The spec recommends (but does not mandate) the following visual conventions for 
 **Node visual styles:**
 
 - **Class nodes**: UML box shape, purple border. Stereotype label (`«interface»`, `«abstract»`, etc.)
-- **Method nodes**: Rounded shape, orange border
+- **Method detail nodes**: Rounded shape, orange border
+- **Field detail nodes**: Rounded shape, blue border
 - **Package groups**: Styled group node with module path label
 - **Ghost nodes** (`status: "proposed"`): Dashed border, reduced opacity, accept/reject overlay
 - **Rejected nodes**: Greyed out, collapsible or hidden
