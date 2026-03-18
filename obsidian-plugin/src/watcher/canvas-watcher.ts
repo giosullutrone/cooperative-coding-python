@@ -5,7 +5,6 @@ export class CanvasWatcher {
   private watcher: FSWatcher | null = null;
   private debouncer: Debouncer;
   private filePath: string | null = null;
-  isWriting = false;
 
   constructor(
     private onReload: () => void,

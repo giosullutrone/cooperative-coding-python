@@ -76,9 +76,11 @@ export function assignLayers(graph: Graph): Map<string, number> {
   function dfs(nodeId: string): number {
     if (layers.has(nodeId)) return layers.get(nodeId)!;
     if (visiting.has(nodeId)) {
-      // Cycle detected — assign current depth
-      layers.set(nodeId, 0);
-      return 0;
+      // Cycle detected — place at deeper layer (max seen + 1)
+      const maxLayer = layers.size > 0 ? Math.max(...layers.values()) : 0;
+      const deepLayer = maxLayer + 1;
+      layers.set(nodeId, deepLayer);
+      return deepLayer;
     }
 
     visiting.add(nodeId);

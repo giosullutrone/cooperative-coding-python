@@ -12,7 +12,6 @@ export class ContextHighlighter {
   /** Map from node ID → set of connecting context edge IDs */
   private contextEdgeMap = new Map<string, Set<string>>();
   private canvasEl: HTMLElement | null = null;
-  private currentHighlighted: string[] = [];
 
   /**
    * Build the context edge cache from canvas data.
@@ -65,7 +64,6 @@ export class ContextHighlighter {
       );
       if (el) {
         el.classList.add(HIGHLIGHT_CLASS);
-        this.currentHighlighted.push(nodeId);
       }
     }
 
@@ -86,6 +84,5 @@ export class ContextHighlighter {
     this.canvasEl
       .querySelectorAll(`.${HIGHLIGHT_CLASS}`)
       .forEach((el) => el.classList.remove(HIGHLIGHT_CLASS));
-    this.currentHighlighted = [];
   }
 }
