@@ -668,3 +668,57 @@ class TestInheritsEdgesInSync:
             if e.ccoding and e.ccoding.relation == "inherits"
         ]
         assert len(inherits_edges) >= 1, "Expected an inherits edge from Child to Base"
+
+
+class TestPreserveMethodBodies:
+    def test_canvas_modified_preserves_method_body(self, tmp_project: Path):
+        """When canvas documentation changes, existing method implementations
+        must not be overwritten with stubs."""
+        canvas_path = tmp_project / "design.canvas"
+        src = tmp_project / "src"
+
+        # Create a class with a real method implementation
+        (src / "worker.py").write_text(
+            'class Worker:\n'
+            '    """Processes tasks.\n\n'
+            '    Responsibility:\n'
+            '        Process tasks from queue.\n'
+            '    """\n\n'
+            '    def process(self, task: str) -> bool:\n'
+            '        """Process a single task.\n\n'
+            '        Responsibility:\n'
+            '            Execute the task.\n'
+            '        """\n'
+            '        result = self._validate(task)\n'
+            '        if result:\n'
+            '            self._execute(task)\n'
+            '        return result\n'
+        )
+
+        # First sync to establish state
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert "worker.Worker" in result.code_to_canvas
+
+        # Now modify the canvas node text (change responsibility)
+        canvas = read_canvas(canvas_path)
+        node = next(
+            (n for n in canvas.nodes if n.ccoding and n.ccoding.qualified_name == "worker.Worker"),
+            None
+        )
+        assert node is not None
+        node.text = node.text.replace(
+            "Process tasks from queue",
+            "Process tasks from the priority queue"
+        )
+        write_canvas(canvas, canvas_path)
+
+        # Sync again — this triggers canvas_modified
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert "worker.Worker" in result.canvas_to_code
+
+        # Verify the method body was preserved
+        code = (src / "worker.py").read_text()
+        assert "self._validate(task)" in code, "Method body was overwritten with a stub"
+        assert "self._execute(task)" in code, "Method body was overwritten with a stub"
+        # Verify the updated responsibility made it into the docstring
+        assert "priority queue" in code

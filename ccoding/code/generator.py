@@ -146,10 +146,83 @@ def _render_method_stub(
 # ---------------------------------------------------------------------------
 
 
+def extract_method_bodies(source_path: Path, class_name: str) -> dict[str, list[str]]:
+    """Extract non-stub method body lines from an existing source file.
+
+    Returns a dict mapping method name to a list of body lines (dedented
+    relative to the method body indentation). Only methods with real
+    implementations (not just ``...``, ``pass``, or ``raise NotImplementedError``)
+    are included.
+    """
+    import ast as _ast
+    text = source_path.read_text()
+    try:
+        tree = _ast.parse(text)
+    except SyntaxError:
+        return {}
+    lines = text.splitlines()
+
+    bodies: dict[str, list[str]] = {}
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if not isinstance(item, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                continue
+
+            # Get body statements, skipping docstring
+            body_stmts = item.body
+            if (
+                body_stmts
+                and isinstance(body_stmts[0], _ast.Expr)
+                and isinstance(body_stmts[0].value, _ast.Constant)
+                and isinstance(body_stmts[0].value.value, str)
+            ):
+                body_stmts = body_stmts[1:]
+
+            if not body_stmts:
+                continue
+
+            # Check if body is just a stub
+            if len(body_stmts) == 1:
+                stmt = body_stmts[0]
+                if isinstance(stmt, _ast.Expr) and isinstance(
+                    getattr(stmt, "value", None), _ast.Constant
+                ) and getattr(stmt.value, "value", None) is ...:
+                    continue
+                if isinstance(stmt, _ast.Pass):
+                    continue
+                if isinstance(stmt, _ast.Raise):
+                    exc = getattr(stmt, "exc", None)
+                    if (
+                        exc
+                        and isinstance(exc, _ast.Call)
+                        and isinstance(exc.func, _ast.Name)
+                        and exc.func.id == "NotImplementedError"
+                    ):
+                        continue
+
+            # Extract source lines for the real body
+            start_line = body_stmts[0].lineno - 1
+            end_line = body_stmts[-1].end_lineno
+            body_source = lines[start_line:end_line]
+
+            # Dedent: find minimum indentation and strip it
+            non_empty = [l for l in body_source if l.strip()]
+            if non_empty:
+                min_indent = min(len(l) - len(l.lstrip()) for l in non_empty)
+                body_source = [l[min_indent:] if len(l) > min_indent else l.lstrip() for l in body_source]
+
+            bodies[item.name] = body_source
+
+    return bodies
+
+
 def generate_class(
     content: ClassContent,
     language: str = "python",
     edges: list[EdgeInfo] | None = None,
+    preserve_bodies: dict[str, list[str]] | None = None,
 ) -> str:
     """Generate a complete Python source file from a ClassContent node.
 
@@ -268,7 +341,13 @@ def generate_class(
         if stereotype == "abstract":
             extra_decorators = ["@abstractmethod"]
 
-        stub = _render_method_stub(m, body, indent=4, decorators=extra_decorators)
+        # Use preserved body if available
+        if preserve_bodies and m.name in preserve_bodies:
+            method_body = preserve_bodies[m.name]
+        else:
+            method_body = body  # the default stub
+
+        stub = _render_method_stub(m, method_body, indent=4, decorators=extra_decorators)
         method_lines.extend(stub)
 
     # --- class body --------------------------------------------------------

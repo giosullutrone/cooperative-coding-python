@@ -816,10 +816,23 @@ def sync(
 
         content = parse_class_node(node.text)
         edge_info = _collect_edge_info(canvas, node.id)
-        code_text = generate_class(content, config.language, edges=edge_info)
+
+        # Extract existing method bodies to preserve implementations
+        elem_state = state.elements.get(qname)
+        preserve_bodies: dict[str, list[str]] = {}
+        if elem_state and elem_state.source_path:
+            _target_for_extract = project_root / elem_state.source_path
+            if _target_for_extract.exists():
+                from ccoding.code.generator import extract_method_bodies
+                class_name = qname.rsplit(".", 1)[-1]
+                preserve_bodies = extract_method_bodies(_target_for_extract, class_name)
+
+        code_text = generate_class(
+            content, config.language, edges=edge_info,
+            preserve_bodies=preserve_bodies if preserve_bodies else None,
+        )
 
         # Find existing source path from state
-        elem_state = state.elements.get(qname)
         if elem_state and elem_state.source_path:
             target = project_root / elem_state.source_path
         else:
