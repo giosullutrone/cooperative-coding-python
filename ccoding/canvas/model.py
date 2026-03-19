@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CcodingMetadata:
-    kind: str = "class"
+    kind: str | None = "class"
     stereotype: str | None = None
     language: str | None = None
     source: str | None = None

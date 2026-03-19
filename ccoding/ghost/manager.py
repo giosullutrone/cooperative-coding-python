@@ -77,7 +77,7 @@ def propose_node(
     else:
         # Context node — minimal metadata
         meta = CcodingMetadata(
-            kind="class",
+            kind=None,
             stereotype=stereotype,
             status=_PROPOSED,
             proposed_by=proposed_by,

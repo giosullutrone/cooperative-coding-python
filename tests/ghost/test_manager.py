@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from ccoding.ghost.manager import (
     propose_node, propose_edge, accept_node, accept_edge,
@@ -5,6 +8,8 @@ from ccoding.ghost.manager import (
     accept_all, reject_all, list_ghosts, restore_node,
 )
 from ccoding.canvas.model import Canvas, Node, Edge, CcodingMetadata, EdgeMetadata
+from ccoding.canvas.writer import write_canvas
+from ccoding.canvas.reader import read_canvas
 
 
 def _base_canvas() -> Canvas:
@@ -212,3 +217,31 @@ class TestBatchOps:
         propose_node(canvas, "class", "Bar", "## Bar", "test")
         ghosts = list_ghosts(canvas)
         assert len(ghosts) == 1
+
+
+class TestContextNodeMetadata:
+    def test_context_node_has_no_kind(self):
+        """A ghost context node (kind=None) must not have kind='class'."""
+        canvas = Canvas()
+        node = propose_node(canvas, kind=None, name="Design note",
+                            content="Protocol chosen over ABC because...",
+                            rationale="Explain design choice")
+        assert node.ccoding is not None
+        assert node.ccoding.kind is None
+        assert node.ccoding.status == "proposed"
+
+    def test_context_node_round_trips_without_kind(self, tmp_path: Path):
+        """A context node written to JSON must not include a 'kind' field."""
+        canvas = Canvas()
+        propose_node(canvas, kind=None, name="Note",
+                     content="Some context", rationale="Because")
+        path = tmp_path / "test.canvas"
+        write_canvas(canvas, path)
+
+        raw = json.loads(path.read_text())
+        node_data = raw["nodes"][0]
+        assert "kind" not in node_data.get("ccoding", {})
+
+        # Round-trip: read back and verify kind is still None
+        canvas2 = read_canvas(path)
+        assert canvas2.nodes[0].ccoding.kind is None

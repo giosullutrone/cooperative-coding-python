@@ -13,7 +13,7 @@ def _parse_ccoding_meta(data: dict | None) -> CcodingMetadata | None:
     if data is None:
         return None
     return CcodingMetadata(
-        kind=data.get("kind", "class"),
+        kind=data.get("kind"),
         stereotype=data.get("stereotype"),
         language=data.get("language"),
         source=data.get("source"),

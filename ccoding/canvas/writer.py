@@ -6,7 +6,9 @@ from ccoding.canvas.model import (
 )
 
 def _serialize_ccoding_meta(meta: CcodingMetadata) -> dict:
-    result = {"kind": meta.kind}
+    result: dict = {}
+    if meta.kind is not None:
+        result["kind"] = meta.kind
     if meta.stereotype is not None:
         result["stereotype"] = meta.stereotype
     if meta.language is not None:
