@@ -531,7 +531,7 @@ def diff(ctx: click.Context) -> None:
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            if node.ccoding.status == "proposed":
+            if node.ccoding.status in ("proposed", "rejected"):
                 continue
             canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
 

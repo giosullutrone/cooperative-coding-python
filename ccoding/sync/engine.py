@@ -302,8 +302,8 @@ def sync(
     canvas_node_map: dict[str, Node] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            # Skip ghost/proposed nodes
-            if node.ccoding.status == "proposed":
+            # Skip ghost/proposed/rejected nodes
+            if node.ccoding.status in ("proposed", "rejected"):
                 continue
             qname = node.ccoding.qualified_name
             canvas_hashes[qname] = content_hash(node.text)
@@ -493,7 +493,7 @@ def sync_status(project_root: Path) -> str:
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            if node.ccoding.status == "proposed":
+            if node.ccoding.status in ("proposed", "rejected"):
                 continue
             canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
 

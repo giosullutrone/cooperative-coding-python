@@ -4,6 +4,7 @@ from pathlib import Path
 from ccoding.sync.engine import sync, import_codebase, SyncResult
 from ccoding.sync.state import load_sync_state
 from ccoding.canvas.reader import read_canvas
+from ccoding.canvas.writer import write_canvas
 
 
 class TestImportCodebase:
@@ -59,3 +60,31 @@ class TestSync:
             if n.ccoding and n.ccoding.kind == "class"
         }
         assert any("NewClass" in name for name in names)
+
+
+class TestSyncSkipsRejected:
+    def test_rejected_nodes_excluded_from_sync(self, tmp_project: Path, fixtures_dir: Path):
+        """Rejected nodes must not participate in sync hashing or code generation."""
+        canvas_path = tmp_project / "design.canvas"
+        import_codebase(
+            source_dir=fixtures_dir / "sample_python",
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        # Manually set a node to rejected status
+        canvas = read_canvas(canvas_path)
+        target_node = None
+        for node in canvas.nodes:
+            if node.ccoding and node.ccoding.qualified_name:
+                target_node = node
+                break
+        assert target_node is not None
+        target_node.ccoding.status = "rejected"
+        write_canvas(canvas, canvas_path)
+
+        # Sync should not try to process the rejected node
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        qname = target_node.ccoding.qualified_name
+        assert qname not in result.canvas_to_code
+        assert qname not in result.code_to_canvas
