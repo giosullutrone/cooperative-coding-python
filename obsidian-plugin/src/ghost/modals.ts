@@ -44,7 +44,7 @@ export class ProposeModal extends Modal {
     new Setting(contentEl)
       .setName("Kind")
       .addDropdown((drop) => {
-        for (const k of NODE_KINDS) drop.addOption(k, k);
+        for (const k of ALL_KINDS) drop.addOption(k, k);
         drop.setValue(this.kind);
         drop.onChange((v) => { this.kind = v; });
       });
