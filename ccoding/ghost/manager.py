@@ -139,6 +139,11 @@ def accept_node(canvas: Canvas, node_id: str) -> Node:
     node = _find_node(canvas, node_id)
     if node.ccoding is None:
         raise ValueError(f"Node '{node_id}' has no ccoding metadata.")
+    if node.ccoding.status != _PROPOSED:
+        raise ValueError(
+            f"Cannot accept node '{node_id}': status must be 'proposed', "
+            f"got '{node.ccoding.status}'."
+        )
     node.ccoding.status = _ACCEPTED
     node.ccoding.proposal_rationale = None
     return node
@@ -149,6 +154,11 @@ def accept_edge(canvas: Canvas, edge_id: str) -> Edge:
     edge = _find_edge(canvas, edge_id)
     if edge.ccoding is None:
         raise ValueError(f"Edge '{edge_id}' has no ccoding metadata.")
+    if edge.ccoding.status != _PROPOSED:
+        raise ValueError(
+            f"Cannot accept edge '{edge_id}': status must be 'proposed', "
+            f"got '{edge.ccoding.status}'."
+        )
 
     from_status = _node_status(canvas, edge.from_node)
     to_status = _node_status(canvas, edge.to_node)
@@ -168,14 +178,19 @@ def accept_edge(canvas: Canvas, edge_id: str) -> Edge:
 # ---------------------------------------------------------------------------
 
 def reject_node(canvas: Canvas, node_id: str) -> Node:
-    """Reject a node and cascade-reject all connected edges."""
+    """Reject a node and cascade-reject all connected proposed edges."""
     node = _find_node(canvas, node_id)
     if node.ccoding is None:
         raise ValueError(f"Node '{node_id}' has no ccoding metadata.")
+    if node.ccoding.status != _PROPOSED:
+        raise ValueError(
+            f"Cannot reject node '{node_id}': status must be 'proposed', "
+            f"got '{node.ccoding.status}'."
+        )
     node.ccoding.status = _REJECTED
 
     for edge in _connected_edges(canvas, node_id):
-        if edge.ccoding is not None and edge.ccoding.status != _REJECTED:
+        if edge.ccoding is not None and edge.ccoding.status == _PROPOSED:
             edge.ccoding.status = _REJECTED
             edge._extra[_CASCADE_KEY] = True
 
@@ -187,6 +202,11 @@ def reject_edge(canvas: Canvas, edge_id: str) -> Edge:
     edge = _find_edge(canvas, edge_id)
     if edge.ccoding is None:
         raise ValueError(f"Edge '{edge_id}' has no ccoding metadata.")
+    if edge.ccoding.status != _PROPOSED:
+        raise ValueError(
+            f"Cannot reject edge '{edge_id}': status must be 'proposed', "
+            f"got '{edge.ccoding.status}'."
+        )
     edge.ccoding.status = _REJECTED
     return edge
 
@@ -200,6 +220,11 @@ def reconsider_node(canvas: Canvas, node_id: str) -> Node:
     node = _find_node(canvas, node_id)
     if node.ccoding is None:
         raise ValueError(f"Node '{node_id}' has no ccoding metadata.")
+    if node.ccoding.status != _REJECTED:
+        raise ValueError(
+            f"Cannot reconsider node '{node_id}': status must be 'rejected', "
+            f"got '{node.ccoding.status}'."
+        )
     node.ccoding.status = _PROPOSED
 
     # Restore any edges that were cascade-rejected due to this node
@@ -216,6 +241,11 @@ def reconsider_edge(canvas: Canvas, edge_id: str) -> Edge:
     edge = _find_edge(canvas, edge_id)
     if edge.ccoding is None:
         raise ValueError(f"Edge '{edge_id}' has no ccoding metadata.")
+    if edge.ccoding.status != _REJECTED:
+        raise ValueError(
+            f"Cannot reconsider edge '{edge_id}': status must be 'rejected', "
+            f"got '{edge.ccoding.status}'."
+        )
 
     from_status = _node_status(canvas, edge.from_node)
     to_status = _node_status(canvas, edge.to_node)

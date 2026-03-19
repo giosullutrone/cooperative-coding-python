@@ -120,6 +120,68 @@ class TestReconsider:
             reconsider_edge(canvas, edge.id)
 
 
+class TestStateGuards:
+    def test_accept_only_from_proposed(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        with pytest.raises(ValueError, match="must be 'proposed'"):
+            accept_node(canvas, ghost.id)
+
+    def test_accept_rejected_must_go_through_reconsider(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        reject_node(canvas, ghost.id)
+        with pytest.raises(ValueError, match="must be 'proposed'"):
+            accept_node(canvas, ghost.id)
+
+    def test_reject_only_from_proposed(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        with pytest.raises(ValueError, match="must be 'proposed'"):
+            reject_node(canvas, ghost.id)
+
+    def test_reconsider_only_from_rejected(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        with pytest.raises(ValueError, match="must be 'rejected'"):
+            reconsider_node(canvas, ghost.id)
+
+    def test_reconsider_accepted_raises(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        with pytest.raises(ValueError, match="must be 'rejected'"):
+            reconsider_node(canvas, ghost.id)
+
+    def test_accept_edge_only_from_proposed(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        edge = propose_edge(canvas, "n1", ghost.id, "depends", "x", "test")
+        accept_edge(canvas, edge.id)
+        with pytest.raises(ValueError, match="must be 'proposed'"):
+            accept_edge(canvas, edge.id)
+
+    def test_reject_edge_only_from_proposed(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        edge = propose_edge(canvas, "n1", ghost.id, "depends", "x", "test")
+        accept_edge(canvas, edge.id)
+        with pytest.raises(ValueError, match="must be 'proposed'"):
+            reject_edge(canvas, edge.id)
+
+    def test_reconsider_edge_only_from_rejected(self):
+        canvas = _base_canvas()
+        ghost = propose_node(canvas, "class", "Bar", "## Bar", "test")
+        accept_node(canvas, ghost.id)
+        edge = propose_edge(canvas, "n1", ghost.id, "depends", "x", "test")
+        with pytest.raises(ValueError, match="must be 'rejected'"):
+            reconsider_edge(canvas, edge.id)
+
+
 class TestBatchOps:
     def test_accept_all(self):
         canvas = _base_canvas()
