@@ -1,6 +1,6 @@
 # cooperative-coding-python
 
-The Python reference implementation of [CooperativeCoding](https://github.com/<owner>/cooperative-coding) — an open standard for human-AI collaborative software design.
+The Python reference implementation of [CooperativeCoding](https://github.com/giosullutrone/cooperative-coding) — an open standard for human-AI collaborative software design.
 
 > Implements CooperativeCoding Spec v1.0
 

@@ -8,7 +8,7 @@ Thank you for your interest in contributing! This guide covers development setup
 
 ```bash
 # Clone the repo
-git clone https://github.com/<owner>/cooperative-coding-python.git
+git clone https://github.com/giosullutrone/cooperative-coding-python.git
 cd cooperative-coding-python
 
 # Install in editable mode with dev dependencies
@@ -63,7 +63,7 @@ npm run dev      # watch mode for development
 
 ## Architecture Questions
 
-For questions about the CooperativeCoding specification, design decisions, or the standard itself, please refer to the [spec repo](https://github.com/<owner>/cooperative-coding). Implementation-specific discussions belong here; protocol-level discussions belong in the spec repo.
+For questions about the CooperativeCoding specification, design decisions, or the standard itself, please refer to the [spec repo](https://github.com/giosullutrone/cooperative-coding). Implementation-specific discussions belong here; protocol-level discussions belong in the spec repo.
 
 ## Code of Conduct
 

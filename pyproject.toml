@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/<owner>/cooperative-coding"
-Repository = "https://github.com/<owner>/cooperative-coding-python"
-Specification = "https://github.com/<owner>/cooperative-coding"
+Homepage = "https://github.com/giosullutrone/cooperative-coding"
+Repository = "https://github.com/giosullutrone/cooperative-coding-python"
+Specification = "https://github.com/giosullutrone/cooperative-coding"
 
 [project.optional-dependencies]
 dev = [
