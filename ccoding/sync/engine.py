@@ -26,7 +26,7 @@ from ccoding.canvas.model import (
 )
 from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
-from ccoding.code.generator import generate_class
+from ccoding.code.generator import generate_class, deprecate_class
 from ccoding.code.parser import PythonAstParser, ClassElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
@@ -300,8 +300,10 @@ def sync(
     # Build current hash maps
     canvas_hashes: dict[str, str] = {}
     canvas_node_map: dict[str, Node] = {}
+    all_canvas_qnames: set[str] = set()
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
+            all_canvas_qnames.add(node.ccoding.qualified_name)
             # Skip ghost/proposed/rejected nodes
             if node.ccoding.status in ("proposed", "rejected"):
                 continue
@@ -463,7 +465,21 @@ def sync(
             node.ccoding.status = "stale"
             result.code_to_canvas.append(qname)
 
-    # canvas_deleted: skip for now (soft delete in future)
+    # Handle canvas_deleted: deprecate corresponding code
+    for qname in diff.canvas_deleted:
+        # Skip nodes that are still present in the canvas but excluded from active
+        # sync (e.g. rejected/proposed). Only act on nodes truly removed from canvas.
+        if qname in all_canvas_qnames:
+            continue
+        elem_state = state.elements.get(qname)
+        if elem_state and elem_state.source_path:
+            source_file = project_root / elem_state.source_path
+            if source_file.exists():
+                class_name = qname.rsplit(".", 1)[-1]
+                deprecate_class(source_file, class_name)
+                result.canvas_to_code.append(qname)
+        # Remove from state tracking
+        state.elements.pop(qname, None)
 
     # Write updated canvas and state
     write_canvas(canvas, canvas_path)

@@ -95,6 +95,44 @@ class TestSyncSkipsRejected:
 
 
 class TestSyncStaleHandling:
+    def test_canvas_deleted_deprecates_code(self, tmp_project: Path, fixtures_dir: Path):
+        """When a canvas node is deleted, the corresponding code should be deprecated."""
+        import shutil
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+
+        # Copy fixtures to temp project
+        shutil.copytree(fixtures_dir / "sample_python", src_dir, dirs_exist_ok=True)
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        # Pick a node and remember its source file
+        state = load_sync_state(tmp_project)
+        qname = next(iter(state.elements))
+        elem_state = state.elements[qname]
+        source_file = tmp_project / elem_state.source_path
+        assert source_file.exists()
+
+        # Delete the node from the canvas
+        canvas = read_canvas(canvas_path)
+        canvas.nodes = [n for n in canvas.nodes
+                        if not (n.ccoding and n.ccoding.qualified_name == qname)]
+        write_canvas(canvas, canvas_path)
+
+        # Sync should deprecate the code
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+
+        # Check that the code file has a deprecation marker
+        if source_file.exists():
+            code = source_file.read_text()
+            class_name = qname.rsplit(".", 1)[-1]
+            assert "DEPRECATED" in code or "deprecated" in code
+
     def test_code_deleted_marks_canvas_stale(self, tmp_project: Path, fixtures_dir: Path):
         """When code is deleted, the sync engine must mark the canvas node as stale."""
         import shutil

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import textwrap
+from pathlib import Path
 
 from ccoding.canvas.markdown import ClassContent, MethodContent, MethodEntry, SignatureEntry
 from ccoding.code.docstring import render_docstring
@@ -280,3 +281,30 @@ def generate_method(content: MethodContent) -> str:
     # --- assemble ----------------------------------------------------------
     lines = [def_line, docstring, "    ..."]
     return "\n".join(lines)
+
+
+def deprecate_class(source_path: Path, class_name: str) -> None:
+    """Add a deprecation marker to a class in an existing source file.
+
+    Only handles class-kind elements. Non-class elements are silently skipped.
+    """
+    import ast
+    text = source_path.read_text()
+    tree = ast.parse(text)
+    lines = text.splitlines(keepends=True)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            # Add import at top of file if not present
+            if "import warnings" not in text:
+                lines.insert(0, "import warnings\n")
+                insert_line = node.lineno  # +1 for inserted import, -1 for 0-index = same
+            else:
+                insert_line = node.lineno - 1
+
+            deprecation_comment = (
+                f"# DEPRECATED: {class_name} was removed from the design canvas.\n"
+            )
+            lines.insert(insert_line, deprecation_comment)
+            source_path.write_text("".join(lines))
+            return
