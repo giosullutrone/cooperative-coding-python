@@ -7,10 +7,51 @@ from __future__ import annotations
 
 import re
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 
 from ccoding.canvas.markdown import ClassContent, MethodContent, MethodEntry, SignatureEntry
 from ccoding.code.docstring import render_docstring
+
+
+@dataclass
+class EdgeInfo:
+    """Edge data passed from the sync engine to the code generator."""
+
+    relation: str       # inherits, implements, composes, depends
+    target_name: str    # Simple class name (e.g., "BaseParser")
+    target_qname: str   # Fully qualified name (e.g., "parsers.base.BaseParser")
+    label: str | None   # Edge label (used for composes field name)
+
+
+def _import_from_qname(qname: str) -> str:
+    """Derive an import statement from a fully-qualified name.
+
+    Example: ``"parsers.base.BaseParser"`` → ``"from parsers.base import BaseParser"``
+    """
+    dot_idx = qname.rfind(".")
+    if dot_idx == -1:
+        # Top-level name — no module prefix, nothing to import
+        return f"import {qname}"
+    module = qname[:dot_idx]
+    name = qname[dot_idx + 1:]
+    return f"from {module} import {name}"
+
+
+def _field_name_from_label(label: str | None, target_name: str) -> str:
+    """Extract a field name from an edge label per spec Data Model §7.
+
+    - If *label* contains `` \u2014 `` (space + em-dash + space), the
+      substring before the first occurrence is the field name.
+    - If *label* has no such separator, the entire label is the field name.
+    - If *label* is ``None``, derive the field name from *target_name* (lower-cased).
+    """
+    if label is None:
+        return target_name.lower()
+    separator = " \u2014 "
+    if separator in label:
+        return label.split(separator, 1)[0]
+    return label
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +136,20 @@ def _render_method_stub(
 # ---------------------------------------------------------------------------
 
 
-def generate_class(content: ClassContent, language: str = "python") -> str:
+def generate_class(
+    content: ClassContent,
+    language: str = "python",
+    edges: list[EdgeInfo] | None = None,
+) -> str:
     """Generate a complete Python source file from a ClassContent node.
 
     Args:
         content: Parsed class canvas node.
         language: Target language (only ``"python"`` is supported).
+        edges: Optional list of :class:`EdgeInfo` objects describing
+            relationships to other classes.  Each edge may add import
+            statements, base classes, or field declarations to the
+            generated source.
 
     Returns:
         A string containing a complete, valid Python source file.
@@ -128,14 +177,34 @@ def generate_class(content: ClassContent, language: str = "python") -> str:
         "abstract": "ABC",
         "enum": "Enum",
     }
-    base = base_map.get(stereotype, "")
+    stereotype_base = base_map.get(stereotype, "")
+
+    # Collect edge-derived bases and fields
+    edge_bases: list[str] = []
+    edge_field_lines: list[str] = []
+
+    for edge in edges or []:
+        import_stmt = _import_from_qname(edge.target_qname)
+        if import_stmt not in import_lines:
+            import_lines.append(import_stmt)
+
+        if edge.relation in ("inherits", "implements"):
+            if edge.target_name not in edge_bases:
+                edge_bases.append(edge.target_name)
+        elif edge.relation == "composes":
+            field_name = _field_name_from_label(edge.label, edge.target_name)
+            edge_field_lines.append(f"    {field_name}: {edge.target_name}")
+        # "depends" → import only (already added above)
+
+    # Build the full bases list: stereotype base first, then edge bases
+    all_bases = [b for b in [stereotype_base] + edge_bases if b]
 
     class_decorator_lines: list[str] = []
     if stereotype == "dataclass":
         class_decorator_lines.append("@dataclass")
 
-    if base:
-        class_header = f"class {content.name}({base}):"
+    if all_bases:
+        class_header = f"class {content.name}({', '.join(all_bases)}):"
     else:
         class_header = f"class {content.name}:"
 
@@ -150,9 +219,11 @@ def generate_class(content: ClassContent, language: str = "python") -> str:
     docstring_lines = ['    """' + docstring_body + '    """']
 
     # --- fields ------------------------------------------------------------
+    # Content fields first, then edge-derived composition fields
     field_lines: list[str] = []
     for f in content.fields:
         field_lines.append(f"    {f.name}: {f.type}")
+    field_lines.extend(edge_field_lines)
 
     # --- methods -----------------------------------------------------------
     method_lines: list[str] = []

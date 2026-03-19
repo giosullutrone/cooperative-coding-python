@@ -1,6 +1,6 @@
 # tests/code/test_generator.py
 import ast
-from ccoding.code.generator import generate_class, generate_method
+from ccoding.code.generator import EdgeInfo, generate_class, generate_method
 from ccoding.canvas.markdown import ClassContent, MethodContent, FieldEntry, MethodEntry, SignatureEntry
 
 
@@ -54,6 +54,151 @@ class TestGenerateClass:
         ast.parse(source)
         assert "class BaseParser(ABC):" in source
         assert "@abstractmethod" in source
+
+
+class TestEdgeAwareGeneration:
+    """Tests for edge-driven code generation (inherits, implements, composes, depends)."""
+
+    def _minimal_content(self, name: str = "ChildParser", stereotype: str | None = None) -> ClassContent:
+        return ClassContent(
+            name=name,
+            stereotype=stereotype,
+            responsibility="A test class",
+            fields=[],
+            methods=[],
+        )
+
+    def test_inherits_edge_adds_base_class(self):
+        content = self._minimal_content("ChildParser")
+        edge = EdgeInfo(
+            relation="inherits",
+            target_name="BaseParser",
+            target_qname="parsers.base.BaseParser",
+            label=None,
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "class ChildParser(BaseParser):" in source
+        assert "from parsers.base import BaseParser" in source
+
+    def test_implements_edge_adds_to_bases(self):
+        content = self._minimal_content("JsonParser")
+        edge = EdgeInfo(
+            relation="implements",
+            target_name="DocumentParser",
+            target_qname="parsers.protocols.DocumentParser",
+            label=None,
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "class JsonParser(DocumentParser):" in source
+        assert "from parsers.protocols import DocumentParser" in source
+
+    def test_composes_edge_adds_field(self):
+        content = self._minimal_content("PipelineRunner")
+        edge = EdgeInfo(
+            relation="composes",
+            target_name="ParserConfig",
+            target_qname="parsers.config.ParserConfig",
+            label="config",
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "config: ParserConfig" in source
+        assert "from parsers.config import ParserConfig" in source
+
+    def test_composes_edge_label_with_description(self):
+        """Label 'stages \u2014 Ordered list' should produce field name 'stages'."""
+        content = self._minimal_content("Pipeline")
+        edge = EdgeInfo(
+            relation="composes",
+            target_name="Stage",
+            target_qname="pipeline.stages.Stage",
+            label="stages \u2014 Ordered list of processing stages",
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "stages: Stage" in source
+        assert "from pipeline.stages import Stage" in source
+
+    def test_depends_edge_adds_import(self):
+        content = self._minimal_content("Runner")
+        edge = EdgeInfo(
+            relation="depends",
+            target_name="Config",
+            target_qname="core.config.Config",
+            label=None,
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "from core.config import Config" in source
+        # depends should NOT add a base or a field
+        assert "class Runner(Config)" not in source
+        assert "Config" not in source.split("from core.config import Config")[1]
+
+    def test_stereotype_plus_inherits(self):
+        """abstract stereotype + inherits edge → both ABC and BaseParser in bases."""
+        content = self._minimal_content("ChildParser", stereotype="abstract")
+        edge = EdgeInfo(
+            relation="inherits",
+            target_name="BaseParser",
+            target_qname="parsers.base.BaseParser",
+            label=None,
+        )
+        source = generate_class(content, edges=[edge])
+        ast.parse(source)
+        assert "class ChildParser(ABC, BaseParser):" in source
+        assert "from abc import ABC, abstractmethod" in source
+        assert "from parsers.base import BaseParser" in source
+
+    def test_multiple_edges(self):
+        """inherits + composes + depends all together."""
+        content = self._minimal_content("PipelineRunner")
+        edges = [
+            EdgeInfo(
+                relation="inherits",
+                target_name="BaseRunner",
+                target_qname="runners.base.BaseRunner",
+                label=None,
+            ),
+            EdgeInfo(
+                relation="composes",
+                target_name="ParserConfig",
+                target_qname="parsers.config.ParserConfig",
+                label="config",
+            ),
+            EdgeInfo(
+                relation="depends",
+                target_name="Logger",
+                target_qname="utils.logging.Logger",
+                label=None,
+            ),
+        ]
+        source = generate_class(content, edges=edges)
+        ast.parse(source)
+        assert "class PipelineRunner(BaseRunner):" in source
+        assert "from runners.base import BaseRunner" in source
+        assert "config: ParserConfig" in source
+        assert "from parsers.config import ParserConfig" in source
+        assert "from utils.logging import Logger" in source
+
+    def test_no_edges_backward_compatible(self):
+        """Calling without edges works exactly as before."""
+        content = ClassContent(
+            name="DocumentParser",
+            stereotype="protocol",
+            responsibility="Parse raw documents into structured AST nodes",
+            fields=[
+                FieldEntry(name="config", type="ParserConfig", has_detail=False),
+            ],
+            methods=[
+                MethodEntry(name="parse", signature="(source: str) -> AST", has_detail=False),
+            ],
+        )
+        source = generate_class(content, language="python")
+        ast.parse(source)
+        assert "class DocumentParser(Protocol):" in source
+        assert "from typing import Protocol" in source
 
 
 class TestGenerateMethod:
