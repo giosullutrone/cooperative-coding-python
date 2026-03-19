@@ -307,9 +307,32 @@ def _create_relationship_edges(
     all_elements: list[ClassElement],
     import_elements: list[ImportElement] | None = None,
 ) -> None:
-    """Create composes and depends edges from code analysis."""
-    # Composes: fields whose type matches a tracked class name
+    """Create inherits, implements, composes and depends edges from code analysis."""
     tracked_class_names = set(name_to_node_id.keys())
+
+    # Inherits / implements: base classes that match tracked class names
+    for base in elem.base_classes:
+        base_simple = base.rsplit(".", 1)[-1] if "." in base else base
+        if base_simple in tracked_class_names and base_simple != elem.name:
+            to_id = name_to_node_id[base_simple]
+            # Determine relation type: Protocol -> implements, else inherits
+            relation = "implements" if base_simple == "Protocol" else "inherits"
+            existing = any(
+                e for e in canvas.edges
+                if e.ccoding and e.ccoding.relation == relation
+                and e.from_node == node_id and e.to_node == to_id
+            )
+            if not existing:
+                edge = Edge(
+                    id=_edge_id(),
+                    from_node=node_id,
+                    to_node=to_id,
+                    label=relation,
+                    ccoding=EdgeMetadata(relation=relation, status="accepted"),
+                )
+                canvas.edges.append(edge)
+
+    # Composes: fields whose type matches a tracked class name
     for f in elem.fields:
         if not f.type_annotation:
             continue

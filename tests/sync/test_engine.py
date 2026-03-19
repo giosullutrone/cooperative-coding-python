@@ -634,3 +634,37 @@ class TestTypeTranslationInSync:
         # Canvas should use language-neutral types, not Python-native
         assert "List<String>" in node.text
         assert "list[str]" not in node.text
+
+
+class TestInheritsEdgesInSync:
+    def test_sync_creates_inherits_edge_for_new_class(self, tmp_project: Path):
+        """When sync discovers a new class that inherits from a tracked class,
+        it must create an 'inherits' edge."""
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+
+        # First, create a base class
+        (src_dir / "base.py").write_text(
+            'class Base:\n'
+            '    """A base class.\n\n    Responsibility:\n        Be a base.\n    """\n'
+            '    pass\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert "base.Base" in result.code_to_canvas
+
+        # Now add a subclass that inherits from Base
+        (src_dir / "child.py").write_text(
+            'from base import Base\n\n'
+            'class Child(Base):\n'
+            '    """A child class.\n\n    Responsibility:\n        Extend Base.\n    """\n'
+            '    pass\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert "child.Child" in result.code_to_canvas
+
+        canvas = read_canvas(canvas_path)
+        inherits_edges = [
+            e for e in canvas.edges
+            if e.ccoding and e.ccoding.relation == "inherits"
+        ]
+        assert len(inherits_edges) >= 1, "Expected an inherits edge from Child to Base"
