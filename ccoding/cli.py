@@ -131,9 +131,9 @@ def sync_cmd(ctx: click.Context, canvas_wins: bool, code_wins: bool) -> None:
 
     strategy: str | None = None
     if canvas_wins:
-        strategy = "canvas"
+        strategy = "canvas-wins"
     elif code_wins:
-        strategy = "code"
+        strategy = "code-wins"
 
     result = sync(canvas_path, project, strategy=strategy)
 

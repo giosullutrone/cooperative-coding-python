@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 _STATE_FILE = ".ccoding/sync-state.json"
@@ -55,7 +56,7 @@ def save_sync_state(state: SyncState, project_root: Path) -> None:
 
     raw = {
         "version": 1,
-        "lastSync": None,
+        "lastSync": datetime.now(timezone.utc).isoformat(),
         "canvasFile": state.canvas_file,
         "elements": elements_raw,
     }

@@ -578,3 +578,33 @@ class TestDetailNodePromotion:
         assert len(method_nodes) == 0, (
             f"Expected 0 method nodes for simple methods, got: {method_nodes}"
         )
+
+
+class TestLastSyncTimestamp:
+    def test_sync_sets_last_sync(self, tmp_project: Path, fixtures_dir: Path):
+        """After sync, the sync state file must contain a non-null lastSync."""
+        canvas_path = tmp_project / "design.canvas"
+        import_codebase(
+            source_dir=fixtures_dir / "sample_python",
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        state_raw = json.loads((tmp_project / ".ccoding" / "sync-state.json").read_text())
+        assert state_raw["lastSync"] is not None
+
+
+class TestSpecVersion:
+    def test_import_sets_spec_version(self, tmp_project: Path, fixtures_dir: Path):
+        """import_codebase must set specVersion in the canvas."""
+        canvas_path = tmp_project / "design.canvas"
+        import_codebase(
+            source_dir=fixtures_dir / "sample_python",
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        raw = json.loads(canvas_path.read_text())
+        ccoding_meta = raw.get("ccoding", {})
+        assert "specVersion" in ccoding_meta
+        assert ccoding_meta["specVersion"] == "1.0.0"

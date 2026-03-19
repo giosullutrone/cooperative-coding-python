@@ -504,6 +504,9 @@ def import_codebase(
             import_elements=imports,
         )
 
+    # Set canvas-level metadata per spec Data Model §2
+    canvas._extra.setdefault("ccoding", {})["specVersion"] = "1.0.0"
+
     write_canvas(canvas, canvas_path)
     save_sync_state(state, project_root)
 
@@ -829,6 +832,9 @@ def sync(
                 result.canvas_to_code.append(qname)
         # Remove from state tracking
         state.elements.pop(qname, None)
+
+    # Ensure specVersion is set on every write (spec Data Model §2)
+    canvas._extra.setdefault("ccoding", {}).setdefault("specVersion", "1.0.0")
 
     # Write updated canvas and state
     write_canvas(canvas, canvas_path)
