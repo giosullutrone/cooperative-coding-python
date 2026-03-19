@@ -262,6 +262,20 @@ def reconsider_edge(canvas: Canvas, edge_id: str) -> Edge:
     return edge
 
 
+def restore_node(canvas: Canvas, node_id: str) -> Node:
+    """Restore a stale node to accepted status."""
+    node = _find_node(canvas, node_id)
+    if node.ccoding is None:
+        raise ValueError(f"Node '{node_id}' has no ccoding metadata.")
+    if node.ccoding.status != _STALE:
+        raise ValueError(
+            f"Cannot restore node '{node_id}': status must be 'stale', "
+            f"got '{node.ccoding.status}'."
+        )
+    node.ccoding.status = _ACCEPTED
+    return node
+
+
 # ---------------------------------------------------------------------------
 # Batch operations
 # ---------------------------------------------------------------------------

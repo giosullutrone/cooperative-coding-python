@@ -2,7 +2,7 @@ import pytest
 from ccoding.ghost.manager import (
     propose_node, propose_edge, accept_node, accept_edge,
     reject_node, reject_edge, reconsider_node, reconsider_edge,
-    accept_all, reject_all, list_ghosts,
+    accept_all, reject_all, list_ghosts, restore_node,
 )
 from ccoding.canvas.model import Canvas, Node, Edge, CcodingMetadata, EdgeMetadata
 
@@ -180,6 +180,19 @@ class TestStateGuards:
         edge = propose_edge(canvas, "n1", ghost.id, "depends", "x", "test")
         with pytest.raises(ValueError, match="must be 'rejected'"):
             reconsider_edge(canvas, edge.id)
+
+
+class TestRestoreNode:
+    def test_restore_stale_to_accepted(self):
+        canvas = _base_canvas()
+        canvas.nodes[0].ccoding.status = "stale"
+        restored = restore_node(canvas, "n1")
+        assert restored.ccoding.status == "accepted"
+
+    def test_restore_non_stale_raises(self):
+        canvas = _base_canvas()
+        with pytest.raises(ValueError, match="must be 'stale'"):
+            restore_node(canvas, "n1")  # n1 is accepted
 
 
 class TestBatchOps:

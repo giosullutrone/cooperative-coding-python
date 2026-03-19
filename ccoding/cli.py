@@ -295,6 +295,36 @@ def reconsider(ctx: click.Context, node_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# restore
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("node_id")
+@click.pass_context
+def restore(ctx: click.Context, node_id: str) -> None:
+    """Restore a stale node back to accepted status."""
+    from ccoding.config import load_config
+    from ccoding.canvas.reader import read_canvas
+    from ccoding.canvas.writer import write_canvas
+    from ccoding.ghost.manager import restore_node
+
+    project: Path = ctx.obj["project"]
+    config = load_config(project)
+    canvas_path = project / config.canvas
+    canvas = read_canvas(canvas_path)
+
+    try:
+        item = restore_node(canvas, node_id)
+        click.echo(f"Restored node {item.id}")
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    write_canvas(canvas, canvas_path)
+
+
+# ---------------------------------------------------------------------------
 # accept-all
 # ---------------------------------------------------------------------------
 
