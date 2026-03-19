@@ -5,11 +5,29 @@ build-backend = "hatchling.build"
 [project]
 name = "cooperative-coding"
 version = "0.1.0"
-description = "CooperativeCoding CLI extension — canvas manipulation, bidirectional sync, and ghost node management"
+description = "Reference implementation of CooperativeCoding — an open standard for human-AI collaborative software design"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
+keywords = ["cooperative-coding", "agentic", "canvas", "architecture", "sync"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "click>=8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/<owner>/cooperative-coding"
+Repository = "https://github.com/<owner>/cooperative-coding-python"
+Specification = "https://github.com/<owner>/cooperative-coding"
 
 [project.optional-dependencies]
 dev = [
