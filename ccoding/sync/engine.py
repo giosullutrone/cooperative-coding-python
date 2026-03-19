@@ -15,7 +15,10 @@ from ccoding.canvas.markdown import (
     ClassContent,
     FieldEntry,
     MethodEntry,
+    MethodContent,
+    SignatureEntry,
     render_class_node,
+    render_method_node,
     parse_class_node,
 )
 from ccoding.canvas.model import (
@@ -28,7 +31,7 @@ from ccoding.canvas.model import (
 from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
 from ccoding.code.generator import generate_class, deprecate_class, EdgeInfo
-from ccoding.code.parser import PythonAstParser, ClassElement, ImportElement
+from ccoding.code.parser import PythonAstParser, ClassElement, MethodElement, ImportElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
 from ccoding.sync.differ import Conflict, SyncDiff, compute_diff
@@ -87,8 +90,18 @@ def _qualified_name(source_path: Path, class_name: str, source_root: Path) -> st
     return f"{module}.{class_name}"
 
 
-def _element_to_class_content(elem: ClassElement) -> ClassContent:
-    """Convert a parsed ClassElement into a ClassContent for canvas rendering."""
+def _element_to_class_content(
+    elem: ClassElement,
+    promoted_methods: set[str] | None = None,
+) -> ClassContent:
+    """Convert a parsed ClassElement into a ClassContent for canvas rendering.
+
+    Args:
+        elem: The parsed class element.
+        promoted_methods: Optional set of method names that have been promoted to
+            detail nodes. When a method name is in this set, its MethodEntry will
+            have ``has_detail=True``, which causes the ``●`` marker to appear.
+    """
     # Responsibility from docstring
     responsibility = elem.docstring_sections.get("responsibility", "")
     if not responsibility:
@@ -120,7 +133,8 @@ def _element_to_class_content(elem: ClassElement) -> ClassContent:
             sig = f"({sig_params})"
         else:
             sig = ""
-        methods.append(MethodEntry(name=m.name, signature=sig))
+        has_detail = promoted_methods is not None and m.name in promoted_methods
+        methods.append(MethodEntry(name=m.name, signature=sig, has_detail=has_detail))
 
     return ClassContent(
         name=elem.name,
@@ -158,6 +172,83 @@ def _source_rel(source_path: str | None, project_root: Path) -> str:
         return str(Path(source_path).relative_to(project_root))
     except ValueError:
         return source_path
+
+
+def _is_significant_method(method: MethodElement) -> bool:
+    """Return True if the method has a non-empty 'responsibility' or 'pseudo code' section."""
+    return bool(
+        method.docstring_sections.get("responsibility", "").strip()
+        or method.docstring_sections.get("pseudo code", "").strip()
+    )
+
+
+def _method_to_detail_node(
+    method: MethodElement,
+    class_qname: str,
+    x: int,
+    y: int,
+    language: str,
+) -> Node:
+    """Create a canvas Node for a significant method detail."""
+    method_qname = f"{class_qname}.{method.name}"
+
+    # Build signature_in from parameters (skip 'self' / 'cls')
+    signature_in: list[SignatureEntry] = [
+        SignatureEntry(
+            name=p.name,
+            type=p.type_annotation or "Any",
+            description="",
+        )
+        for p in method.parameters
+        if p.name not in ("self", "cls")
+    ]
+
+    # Build signature_out from return_type
+    signature_out: SignatureEntry | None = None
+    if method.return_type:
+        signature_out = SignatureEntry(name="", type=method.return_type, description="")
+
+    # Parse raises from docstring section "raises": each line "ExcType: description"
+    raises: list[SignatureEntry] = []
+    raises_raw = method.docstring_sections.get("raises", "").strip()
+    if raises_raw:
+        for line in raises_raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if ":" in line:
+                exc_type, _, desc = line.partition(":")
+                raises.append(SignatureEntry(name="", type=exc_type.strip(), description=desc.strip()))
+            else:
+                raises.append(SignatureEntry(name="", type=line, description=""))
+
+    content = MethodContent(
+        name=f"{class_qname.rsplit('.', 1)[-1]}.{method.name}",
+        responsibility=method.docstring_sections.get("responsibility", "").strip(),
+        signature_in=signature_in,
+        signature_out=signature_out,
+        raises=raises,
+        pseudo_code=method.docstring_sections.get("pseudo code", "").strip(),
+    )
+
+    text = render_method_node(content)
+
+    return Node(
+        id=_new_id(),
+        type="text",
+        x=x,
+        y=y,
+        width=_NODE_WIDTH,
+        height=_NODE_HEIGHT,
+        text=text,
+        ccoding=CcodingMetadata(
+            kind="method",
+            language=language,
+            qualified_name=method_qname,
+            status="accepted",
+            layout_pending=True,
+        ),
+    )
 
 
 _ALLOWED_RELATIONS = ("inherits", "implements", "composes", "depends")
@@ -304,7 +395,11 @@ def import_codebase(
             source_dir,
         )
 
-        content = _element_to_class_content(elem)
+        # Determine which methods are significant enough to promote
+        significant_methods = [m for m in elem.methods if _is_significant_method(m)]
+        promoted_methods: set[str] = {m.name for m in significant_methods}
+
+        content = _element_to_class_content(elem, promoted_methods if promoted_methods else None)
         text = render_class_node(content)
 
         source_rel = _source_rel(elem.source_path, project_root)
@@ -329,6 +424,25 @@ def import_codebase(
         )
         canvas.nodes.append(node)
         name_to_node_id[elem.name] = node_id
+
+        # Create detail nodes for significant methods
+        for method_idx, method in enumerate(significant_methods):
+            detail_node = _method_to_detail_node(
+                method=method,
+                class_qname=qname,
+                x=x + _NODE_WIDTH + _GRID_SPACING_X,
+                y=y + method_idx * (_NODE_HEIGHT + 20),
+                language=language,
+            )
+            canvas.nodes.append(detail_node)
+            detail_edge = Edge(
+                id=_edge_id(),
+                from_node=node_id,
+                to_node=detail_node.id,
+                label=method.name,
+                ccoding=EdgeMetadata(relation="detail", status="accepted"),
+            )
+            canvas.edges.append(detail_edge)
 
         # Compute hashes
         canvas_hash = content_hash(text)
@@ -436,6 +550,11 @@ def sync(
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
             all_canvas_qnames.add(node.ccoding.qualified_name)
+            # Only class nodes participate in the bidirectional sync diff.
+            # Method/field detail nodes are managed by the class node and must
+            # not be treated as independent canvas-added elements.
+            if node.ccoding.kind != "class":
+                continue
             # Skip ghost/proposed/rejected/stale nodes
             if node.ccoding.status in ("proposed", "rejected", "stale"):
                 continue
@@ -482,7 +601,11 @@ def sync(
         idx = len(canvas.nodes)
         x, y = _grid_position(idx)
 
-        content = _element_to_class_content(elem)
+        # Determine which methods are significant enough to promote
+        significant_methods = [m for m in elem.methods if _is_significant_method(m)]
+        promoted_methods_set: set[str] = {m.name for m in significant_methods}
+
+        content = _element_to_class_content(elem, promoted_methods_set if promoted_methods_set else None)
         text = render_class_node(content)
         source_rel = _source_rel(elem.source_path, project_root)
 
@@ -506,6 +629,25 @@ def sync(
         )
         canvas.nodes.append(node)
 
+        # Create detail nodes for significant methods
+        for method_idx, method in enumerate(significant_methods):
+            detail_node = _method_to_detail_node(
+                method=method,
+                class_qname=qname,
+                x=x + _NODE_WIDTH + _GRID_SPACING_X,
+                y=y + method_idx * (_NODE_HEIGHT + 20),
+                language=config.language,
+            )
+            canvas.nodes.append(detail_node)
+            detail_edge = Edge(
+                id=_edge_id(),
+                from_node=node_id,
+                to_node=detail_node.id,
+                label=method.name,
+                ccoding=EdgeMetadata(relation="detail", status="accepted"),
+            )
+            canvas.edges.append(detail_edge)
+
         canvas_hash = content_hash(text)
         code_hash_val = code_hashes[qname]
 
@@ -520,7 +662,7 @@ def sync(
         # Build name_to_node_id from all current canvas nodes for edge creation
         name_to_node_id: dict[str, str] = {}
         for n in canvas.nodes:
-            if n.ccoding and n.ccoding.qualified_name:
+            if n.ccoding and n.ccoding.qualified_name and n.ccoding.kind == "class":
                 simple = n.ccoding.qualified_name.rsplit(".", 1)[-1]
                 name_to_node_id[simple] = n.id
 

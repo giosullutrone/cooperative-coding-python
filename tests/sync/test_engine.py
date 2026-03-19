@@ -466,3 +466,115 @@ class TestEdgeCreationFromCode:
         assert any("config" in (e.label or "") for e in composes_edges), (
             f"Expected a composes edge with label containing 'config', got: {composes_edges}"
         )
+
+
+class TestDetailNodePromotion:
+    """Verify that methods with significant docs are promoted to detail nodes."""
+
+    def test_import_promotes_method_with_pseudocode(self, tmp_project: Path):
+        """Methods with Responsibility + Pseudo Code sections are promoted to detail nodes."""
+        src_dir = tmp_project / "src"
+        canvas_path = tmp_project / "design.canvas"
+
+        (src_dir / "worker.py").write_text(
+            'class Worker:\n'
+            '    """A worker class.\n\n'
+            '    Responsibility:\n'
+            '        Processes tasks.\n'
+            '    """\n'
+            '\n'
+            '    def process(self, task: str) -> bool:\n'
+            '        """Process a task.\n\n'
+            '        Responsibility:\n'
+            '            Execute the given task and return success status.\n\n'
+            '        Pseudo Code:\n'
+            '            1. Validate task\n'
+            '            2. Execute task\n'
+            '            3. Return result\n'
+            '        """\n'
+            '        pass\n'
+            '\n'
+            '    def status(self) -> str:\n'
+            '        """Return worker status."""\n'
+            '        return "idle"\n'
+        )
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        canvas = read_canvas(canvas_path)
+
+        # At least one detail edge must exist
+        detail_edges = [
+            e for e in canvas.edges
+            if e.ccoding and e.ccoding.relation == "detail"
+        ]
+        assert len(detail_edges) >= 1, (
+            f"Expected at least one detail edge, got: {canvas.edges}"
+        )
+
+        # At least one method node with "process" in qualified_name
+        method_nodes = [
+            n for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "method"
+        ]
+        assert any(
+            "process" in (n.ccoding.qualified_name or "")
+            for n in method_nodes
+        ), f"Expected a method node with 'process' in qualified_name, got: {method_nodes}"
+
+        # The method node text must contain "Pseudo Code"
+        assert any(
+            "Pseudo Code" in n.text
+            for n in method_nodes
+            if "process" in (n.ccoding.qualified_name or "")
+        ), "Expected 'Pseudo Code' in method detail node text"
+
+        # The class node text must contain the "●" detail marker
+        class_nodes = [
+            n for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "class"
+        ]
+        assert any(
+            "●" in n.text
+            for n in class_nodes
+        ), "Expected '●' detail marker in class node text"
+
+    def test_simple_method_not_promoted(self, tmp_project: Path):
+        """Methods without Responsibility or Pseudo Code sections are NOT promoted."""
+        src_dir = tmp_project / "src"
+        canvas_path = tmp_project / "design.canvas"
+
+        (src_dir / "simple.py").write_text(
+            'class Simple:\n'
+            '    """A simple class."""\n'
+            '\n'
+            '    def greet(self) -> str:\n'
+            '        """Return a greeting."""\n'
+            '        return "hello"\n'
+            '\n'
+            '    def farewell(self) -> str:\n'
+            '        """Return a farewell."""\n'
+            '        return "bye"\n'
+        )
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        canvas = read_canvas(canvas_path)
+
+        method_nodes = [
+            n for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "method"
+        ]
+        assert len(method_nodes) == 0, (
+            f"Expected 0 method nodes for simple methods, got: {method_nodes}"
+        )
