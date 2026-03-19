@@ -1,20 +1,21 @@
 // src/highlight/context.ts
 
-const HIGHLIGHT_CLASS = "ccoding-context-highlight";
+const HIGHLIGHT_KEY = "ccodingContextHighlight";
 
 /**
  * Manages context node highlighting when a ccoding node is selected.
- * Caches context edge mapping for O(1) lookups.
+ * Uses data attributes instead of CSS classes for consistency with
+ * the canvas-patcher approach.
  */
 export class ContextHighlighter {
   /** Map from node ID → set of connected context node IDs */
   private contextMap = new Map<string, Set<string>>();
   /** Map from node ID → set of connecting context edge IDs */
   private contextEdgeMap = new Map<string, Set<string>>();
-  private canvasEl: HTMLElement | null = null;
+  private canvas: any = null;
 
   /**
-   * Build the context edge cache from canvas data.
+   * Build the context edge cache from canvas data (raw JSON format).
    */
   buildCache(canvasData: any): void {
     this.contextMap.clear();
@@ -38,51 +39,61 @@ export class ContextHighlighter {
     }
   }
 
-  attach(canvasEl: HTMLElement): void {
-    this.canvasEl = canvasEl;
+  attach(canvas: any): void {
+    this.canvas = canvas;
   }
 
   detach(): void {
     this.clearHighlights();
-    this.canvasEl = null;
+    this.canvas = null;
   }
 
-  /**
-   * Called when canvas selection changes. Pass the selected node ID or null.
-   */
   onSelectionChange(selectedNodeId: string | null): void {
     this.clearHighlights();
-    if (!selectedNodeId || !this.canvasEl) return;
+    if (!selectedNodeId || !this.canvas) return;
 
     const contextNodeIds = this.contextMap.get(selectedNodeId);
     const contextEdgeIds = this.contextEdgeMap.get(selectedNodeId);
     if (!contextNodeIds) return;
 
-    for (const nodeId of contextNodeIds) {
-      const el = this.canvasEl.querySelector<HTMLElement>(
-        `.canvas-node[data-id="${nodeId}"]`,
-      );
-      if (el) {
-        el.classList.add(HIGHLIGHT_CLASS);
+    // Highlight context nodes
+    if (this.canvas.nodes) {
+      for (const nodeId of contextNodeIds) {
+        const node = this.canvas.nodes.get(nodeId);
+        const el = node?.nodeEl as HTMLElement | undefined;
+        if (el) el.dataset[HIGHLIGHT_KEY] = "true";
       }
     }
 
-    if (contextEdgeIds) {
+    // Highlight context edges
+    if (contextEdgeIds && this.canvas.edges) {
       for (const edgeId of contextEdgeIds) {
-        const el = this.canvasEl.querySelector<HTMLElement>(
-          `.canvas-edge[data-id="${edgeId}"]`,
-        );
-        if (el) {
-          el.classList.add(HIGHLIGHT_CLASS);
-        }
+        const edge = this.canvas.edges.get(edgeId);
+        const el = (edge?.lineGroupEl ?? edge?.wrapperEl ?? edge?.edgeEl) as
+          | HTMLElement
+          | undefined;
+        if (el) el.dataset[HIGHLIGHT_KEY] = "true";
       }
     }
   }
 
   private clearHighlights(): void {
-    if (!this.canvasEl) return;
-    this.canvasEl
-      .querySelectorAll(`.${HIGHLIGHT_CLASS}`)
-      .forEach((el) => el.classList.remove(HIGHLIGHT_CLASS));
+    if (!this.canvas) return;
+
+    if (this.canvas.nodes) {
+      for (const [, node] of this.canvas.nodes) {
+        const el = node?.nodeEl as HTMLElement | undefined;
+        if (el?.dataset[HIGHLIGHT_KEY]) delete el.dataset[HIGHLIGHT_KEY];
+      }
+    }
+
+    if (this.canvas.edges) {
+      for (const [, edge] of this.canvas.edges) {
+        const el = (edge?.lineGroupEl ?? edge?.wrapperEl ?? edge?.edgeEl) as
+          | HTMLElement
+          | undefined;
+        if (el?.dataset[HIGHLIGHT_KEY]) delete el.dataset[HIGHLIGHT_KEY];
+      }
+    }
   }
 }
