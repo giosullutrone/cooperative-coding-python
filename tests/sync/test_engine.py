@@ -94,6 +94,32 @@ class TestSyncSkipsRejected:
         assert qname not in result.code_to_canvas
 
 
+class TestSyncSkipsStale:
+    def test_stale_nodes_excluded_from_sync(self, tmp_project: Path, fixtures_dir: Path):
+        """Stale nodes must not participate in sync."""
+        import shutil
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+        shutil.copytree(fixtures_dir / "sample_python", src_dir, dirs_exist_ok=True)
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        canvas = read_canvas(canvas_path)
+        state = load_sync_state(tmp_project)
+        qname = next(iter(state.elements))
+        node = canvas.find_by_qualified_name(qname)
+        node.ccoding.status = "stale"
+        from ccoding.canvas.writer import write_canvas
+        write_canvas(canvas, canvas_path)
+
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        assert qname not in result.canvas_to_code
+
+
 class TestSyncStaleHandling:
     def test_canvas_deleted_deprecates_code(self, tmp_project: Path, fixtures_dir: Path):
         """When a canvas node is deleted, the corresponding code should be deprecated."""

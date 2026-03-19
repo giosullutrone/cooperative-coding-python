@@ -304,8 +304,8 @@ def sync(
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
             all_canvas_qnames.add(node.ccoding.qualified_name)
-            # Skip ghost/proposed/rejected nodes
-            if node.ccoding.status in ("proposed", "rejected"):
+            # Skip ghost/proposed/rejected/stale nodes
+            if node.ccoding.status in ("proposed", "rejected", "stale"):
                 continue
             qname = node.ccoding.qualified_name
             canvas_hashes[qname] = content_hash(node.text)
@@ -516,7 +516,7 @@ def sync_status(project_root: Path) -> str:
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            if node.ccoding.status in ("proposed", "rejected"):
+            if node.ccoding.status in ("proposed", "rejected", "stale"):
                 continue
             canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
 
