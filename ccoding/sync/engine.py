@@ -496,8 +496,16 @@ def _create_relationship_edges(
         base_simple = base.rsplit(".", 1)[-1] if "." in base else base
         if base_simple in tracked_class_names and base_simple != elem.name:
             to_id = name_to_node_id[base_simple]
-            # Determine relation type: Protocol -> implements, else inherits
-            relation = "implements" if base_simple == "Protocol" else "inherits"
+            # Determine relation: check if target node has protocol stereotype
+            target_node = next(
+                (n for n in canvas.nodes if n.id == to_id), None
+            )
+            is_protocol = (
+                target_node is not None
+                and target_node.text
+                and "«protocol»" in target_node.text.lower()
+            )
+            relation = "implements" if is_protocol else "inherits"
             existing = any(
                 e for e in canvas.edges
                 if e.ccoding and e.ccoding.relation == relation
@@ -701,8 +709,16 @@ def import_codebase(
             base_simple = base.rsplit(".", 1)[-1] if "." in base else base
             to_id = name_to_node_id.get(base_simple)
             if to_id:
-                # Determine relation type: Protocol -> implements, else inherits
-                relation = "implements" if base_simple == "Protocol" else "inherits"
+                # Determine relation: check if target node has protocol stereotype
+                target_node = next(
+                    (n for n in canvas.nodes if n.id == to_id), None
+                )
+                is_protocol = (
+                    target_node is not None
+                    and target_node.text
+                    and "«protocol»" in target_node.text.lower()
+                )
+                relation = "implements" if is_protocol else "inherits"
                 edge = Edge(
                     id=_edge_id(),
                     from_node=from_id,
