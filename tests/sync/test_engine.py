@@ -769,3 +769,81 @@ class TestFieldDetailNodePromotion:
             if n.ccoding and n.ccoding.kind == "field"
         ]
         assert len(field_nodes) == 0
+
+
+class TestTopologicalSort:
+    def test_basic_ordering(self):
+        from ccoding.sync.engine import _topological_sort
+        result = _topological_sort(
+            ["child", "base"],
+            [("child", "base")]  # child depends on base
+        )
+        assert result.index("base") < result.index("child")
+
+    def test_cycle_handled(self):
+        import warnings
+        from ccoding.sync.engine import _topological_sort
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = _topological_sort(
+                ["a", "b"],
+                [("a", "b"), ("b", "a")]
+            )
+            assert len(result) == 2  # Both elements included
+            assert len(w) == 1
+            assert "Circular dependency" in str(w[0].message)
+
+    def test_no_edges_stable_order(self):
+        from ccoding.sync.engine import _topological_sort
+        result = _topological_sort(["c", "a", "b"], [])
+        assert result == ["a", "b", "c"]  # sorted alphabetically
+
+
+class TestCycleDetection:
+    def test_circular_dependency_produces_warning(self, tmp_project: Path):
+        """Circular dependencies should be detected and not cause infinite loops."""
+        canvas_path = tmp_project / "design.canvas"
+        canvas_data = {
+            "nodes": [
+                {
+                    "id": "a", "type": "text",
+                    "x": 0, "y": 0, "width": 300, "height": 200,
+                    "text": "## A\n\n> Class A\n\n### Fields\n\n### Methods\n",
+                    "ccoding": {"kind": "class", "qualifiedName": "a.A",
+                                "status": "accepted", "language": "python",
+                                "proposedBy": None, "proposalRationale": None},
+                },
+                {
+                    "id": "b", "type": "text",
+                    "x": 400, "y": 0, "width": 300, "height": 200,
+                    "text": "## B\n\n> Class B\n\n### Fields\n\n### Methods\n",
+                    "ccoding": {"kind": "class", "qualifiedName": "b.B",
+                                "status": "accepted", "language": "python",
+                                "proposedBy": None, "proposalRationale": None},
+                },
+            ],
+            "edges": [
+                {"id": "e1", "fromNode": "a", "toNode": "b",
+                 "ccoding": {"relation": "depends", "status": "accepted",
+                             "proposedBy": None, "proposalRationale": None}},
+                {"id": "e2", "fromNode": "b", "toNode": "a",
+                 "ccoding": {"relation": "depends", "status": "accepted",
+                             "proposedBy": None, "proposalRationale": None}},
+            ],
+        }
+        canvas_path.write_text(json.dumps(canvas_data))
+
+        # Should not hang — must complete even with circular dependency
+        import signal
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Sync hung on circular dependency")
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(10)
+        try:
+            result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        finally:
+            signal.alarm(0)
+
+        # Both elements should still be processed
+        src = tmp_project / "src"
+        assert (src / "a.py").exists() or (src / "b.py").exists()

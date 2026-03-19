@@ -7,6 +7,7 @@ keep the Obsidian canvas and the Python source tree in sync.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
@@ -62,6 +63,52 @@ class SyncResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _topological_sort(
+    elements: list[str],
+    edges: list[tuple[str, str]],
+) -> list[str]:
+    """Sort elements in dependency order. Detect and warn about cycles.
+
+    Returns elements in topological order. If a cycle is detected, the
+    cycle members are included in a stable (sorted) order with a warning.
+    """
+    deps: dict[str, set[str]] = {e: set() for e in elements}
+    element_set = set(elements)
+    for from_e, to_e in edges:
+        if from_e in element_set and to_e in element_set:
+            deps[from_e].add(to_e)
+
+    result: list[str] = []
+    visited: set[str] = set()
+    in_stack: set[str] = set()
+    cycle_members: set[str] = set()
+
+    def visit(node: str) -> None:
+        if node in visited:
+            return
+        if node in in_stack:
+            cycle_members.add(node)
+            return
+        in_stack.add(node)
+        for dep in sorted(deps.get(node, [])):
+            visit(dep)
+        in_stack.discard(node)
+        visited.add(node)
+        result.append(node)
+
+    for elem in sorted(elements):
+        visit(elem)
+
+    if cycle_members:
+        warnings.warn(
+            f"Circular dependency detected among: {', '.join(sorted(cycle_members))}. "
+            f"Processing in stable order.",
+            stacklevel=2,
+        )
+
+    return result
+
 
 _GRID_SPACING_X = 400
 _GRID_SPACING_Y = 400
@@ -703,6 +750,26 @@ def sync(
         if result.conflicts:
             return result
 
+    # Order elements by dependency (spec §9.2, §10.1 cycle detection)
+    edge_pairs: list[tuple[str, str]] = []
+    for edge in canvas.edges:
+        if edge.ccoding and edge.ccoding.relation in ("inherits", "implements"):
+            from_qname = next(
+                (n.ccoding.qualified_name for n in canvas.nodes
+                 if n.id == edge.from_node and n.ccoding),
+                None,
+            )
+            to_qname = next(
+                (n.ccoding.qualified_name for n in canvas.nodes
+                 if n.id == edge.to_node and n.ccoding),
+                None,
+            )
+            if from_qname and to_qname:
+                edge_pairs.append((from_qname, to_qname))
+
+    if diff.code_added:
+        diff.code_added = _topological_sort(diff.code_added, edge_pairs)
+
     # Apply changes: code_added -> create new canvas nodes
     for qname in diff.code_added:
         elem = code_element_map[qname]
@@ -922,6 +989,10 @@ def sync(
                     )
                     canvas.edges.append(detail_edge)
 
+    # Order canvas_added by dependency (spec §9.2)
+    if diff.canvas_added:
+        diff.canvas_added = _topological_sort(diff.canvas_added, edge_pairs)
+
     # Apply changes: canvas_added (accepted nodes only) -> generate code
     for qname in diff.canvas_added:
         node = canvas_node_map.get(qname)
@@ -957,6 +1028,10 @@ def sync(
             source_path=source_rel,
         )
         result.canvas_to_code.append(qname)
+
+    # Order canvas_modified by dependency (spec §9.2)
+    if diff.canvas_modified:
+        diff.canvas_modified = _topological_sort(diff.canvas_modified, edge_pairs)
 
     # Apply changes: canvas_modified -> regenerate code from canvas
     for qname in diff.canvas_modified:
