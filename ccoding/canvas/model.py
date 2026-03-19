@@ -13,7 +13,7 @@ class CcodingMetadata:
     status: str = "accepted"
     proposed_by: str | None = None
     proposal_rationale: str | None = None
-    layout_pending: bool = False
+    layout_pending: bool = False  # Implementation-specific; not in the spec
 
 
 @dataclass
