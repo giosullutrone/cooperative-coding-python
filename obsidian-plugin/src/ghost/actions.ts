@@ -38,21 +38,24 @@ async function runAction(
   }
 }
 
-export async function acceptNode(
+/** Accept a node or edge by ID. */
+export async function acceptElement(
   bridge: CcodingBridge,
   id: string,
 ): Promise<void> {
   await runAction(bridge, () => bridge.accept(id), "Accepting proposal");
 }
 
-export async function rejectNode(
+/** Reject a node or edge by ID. */
+export async function rejectElement(
   bridge: CcodingBridge,
   id: string,
 ): Promise<void> {
   await runAction(bridge, () => bridge.reject(id), "Rejecting proposal");
 }
 
-export async function reconsiderNode(
+/** Reconsider a rejected node or edge by ID. */
+export async function reconsiderElement(
   bridge: CcodingBridge,
   id: string,
 ): Promise<void> {

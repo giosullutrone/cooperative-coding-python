@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
   Notice: vi.fn().mockImplementation(() => ({ hide: vi.fn() })),
 }));
 
-import { acceptNode, rejectNode, syncCanvas } from "../../src/ghost/actions";
+import { acceptElement, rejectElement, syncCanvas } from "../../src/ghost/actions";
 import type { CcodingBridge } from "../../src/bridge/cli";
 
 function mockBridge(result: any): CcodingBridge {
@@ -22,16 +22,22 @@ function mockBridge(result: any): CcodingBridge {
 }
 
 describe("ghost actions", () => {
-  it("calls bridge.accept for acceptNode", async () => {
+  it("calls bridge.accept for acceptElement", async () => {
     const bridge = mockBridge({ success: true, stdout: "", stderr: "", exitCode: 0 });
-    await acceptNode(bridge, "node-1");
+    await acceptElement(bridge, "node-1");
     expect(bridge.accept).toHaveBeenCalledWith("node-1");
   });
 
-  it("calls bridge.reject for rejectNode", async () => {
+  it("calls bridge.reject for rejectElement", async () => {
     const bridge = mockBridge({ success: true, stdout: "", stderr: "", exitCode: 0 });
-    await rejectNode(bridge, "node-2");
+    await rejectElement(bridge, "node-2");
     expect(bridge.reject).toHaveBeenCalledWith("node-2");
+  });
+
+  it("works for edge IDs too", async () => {
+    const bridge = mockBridge({ success: true, stdout: "", stderr: "", exitCode: 0 });
+    await acceptElement(bridge, "edge-abc");
+    expect(bridge.accept).toHaveBeenCalledWith("edge-abc");
   });
 
   it("retries on busy error", async () => {

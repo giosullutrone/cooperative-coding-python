@@ -1,7 +1,24 @@
 // src/bridge/cli.ts
 import { execFile as nodeExecFile } from "child_process";
+import { existsSync } from "fs";
+import { join, dirname } from "path";
 import { AsyncQueue } from "./queue";
 import type { CommandResult, PluginSettings } from "../types";
+
+export interface ProposeOptions {
+  kind: string;
+  name: string;
+  stereotype?: string;
+  rationale?: string;
+}
+
+export interface ProposeEdgeOptions {
+  from: string;
+  to: string;
+  relation: string;
+  label?: string;
+  rationale?: string;
+}
 
 export class CcodingBridge {
   private settings: PluginSettings;
@@ -48,6 +65,47 @@ export class CcodingBridge {
 
   rejectAll(): Promise<CommandResult> {
     return this.run(["reject-all"]);
+  }
+
+  /** Propose a new ghost node. Returns the result with the new node ID in stdout. */
+  propose(opts: ProposeOptions): Promise<CommandResult> {
+    const args = ["propose", "--kind", opts.kind, "--name", opts.name];
+    if (opts.stereotype) args.push("--stereotype", opts.stereotype);
+    if (opts.rationale) args.push("--rationale", opts.rationale);
+    return this.run(args);
+  }
+
+  /** Propose a new ghost edge between two nodes. */
+  proposeEdge(opts: ProposeEdgeOptions): Promise<CommandResult> {
+    const args = [
+      "propose-edge",
+      "--from", opts.from,
+      "--to", opts.to,
+      "--relation", opts.relation,
+    ];
+    if (opts.label) args.push("--label", opts.label);
+    if (opts.rationale) args.push("--rationale", opts.rationale);
+    return this.run(args);
+  }
+
+  /** List all pending ghost proposals. */
+  ghosts(): Promise<CommandResult> {
+    return this.run(["ghosts"]);
+  }
+
+  /** Set the text content of a canvas node. */
+  setText(nodeId: string, text: string): Promise<CommandResult> {
+    return this.runWithStdin(["set-text", nodeId], text);
+  }
+
+  /** Show sync diff (dry-run). */
+  diff(): Promise<CommandResult> {
+    return this.run(["diff"]);
+  }
+
+  /** Show a node's content by qualified name. */
+  show(qualifiedName: string): Promise<CommandResult> {
+    return this.run(["show", qualifiedName]);
   }
 
   // --- Sync operations ---
@@ -99,9 +157,6 @@ export class CcodingBridge {
     if (this.settings.projectRoot) return this.settings.projectRoot;
     if (this.resolvedProjectRoot !== null) return this.resolvedProjectRoot;
 
-    const { existsSync } = require("fs") as typeof import("fs");
-    const { join, dirname } = require("path") as typeof import("path");
-
     let dir = this.vaultBasePath;
     while (dir && dir !== dirname(dir)) {
       if (existsSync(join(dir, ".ccoding"))) {
@@ -129,6 +184,13 @@ export class CcodingBridge {
     );
   }
 
+  /** Run a command with text piped to stdin. */
+  private runWithStdin(args: string[], stdin: string): Promise<CommandResult> {
+    return this.queue.enqueue(() =>
+      this.execWithStdin(this.cliPath(), [...this.projectArgs(), ...args], stdin),
+    );
+  }
+
   private exec(cmd: string, args: string[]): Promise<CommandResult> {
     return new Promise((resolve) => {
       nodeExecFile(
@@ -140,7 +202,6 @@ export class CcodingBridge {
         },
         (err, stdout, stderr) => {
           if (err) {
-            // Distinguish timeout from other errors
             const isTimeout = (err as any).killed === true
               || (err as any).signal === "SIGTERM";
             resolve({
@@ -161,6 +222,42 @@ export class CcodingBridge {
           }
         },
       );
+    });
+  }
+
+  private execWithStdin(cmd: string, args: string[], stdin: string): Promise<CommandResult> {
+    return new Promise((resolve) => {
+      const child = nodeExecFile(
+        cmd,
+        args,
+        {
+          timeout: this.settings.commandTimeout,
+          cwd: this.getProjectRoot() || undefined,
+        },
+        (err, stdout, stderr) => {
+          if (err) {
+            const isTimeout = (err as any).killed === true
+              || (err as any).signal === "SIGTERM";
+            resolve({
+              success: false,
+              stdout: stdout || "",
+              stderr: isTimeout
+                ? "Command timed out. The operation may still be running."
+                : stderr || err.message,
+              exitCode: (err as any).code ?? 1,
+            });
+          } else {
+            resolve({
+              success: true,
+              stdout: stdout || "",
+              stderr: stderr || "",
+              exitCode: 0,
+            });
+          }
+        },
+      );
+      child.stdin?.write(stdin);
+      child.stdin?.end();
     });
   }
 }

@@ -2,49 +2,38 @@
 import type { CcodingMetadata, EdgeMetadata } from "../types";
 
 /**
- * Compute CSS class list for a ccoding canvas node.
+ * Compute data-attribute map for a ccoding canvas node.
  * Pure function — no DOM or Obsidian dependency.
- *
- * Accepted nodes get no extra styling (they look like normal canvas nodes).
- * Only proposed/rejected/stale get visual treatment.
+ * Returns a Record where keys are data-attribute names and values are strings.
+ * Undefined values should not be set on the DOM element.
  */
-export function nodeClasses(
+export function nodeAttributes(
   meta: CcodingMetadata,
-  showRejected: boolean,
-): string[] {
-  const classes: string[] = ["ccoding-node"];
+  hideRejected: boolean,
+): Record<string, string | undefined> {
+  const attrs: Record<string, string | undefined> = {};
 
-  switch (meta.status) {
-    case "proposed":
-      classes.push("ccoding-ghost");
-      break;
-    case "rejected":
-      classes.push("ccoding-rejected");
-      if (!showRejected) {
-        classes.push("ccoding-rejected-hidden");
-      }
-      break;
-    case "accepted":
-      classes.push("ccoding-accepted");
-      break;
-    case "stale":
-      classes.push("ccoding-stale");
-      break;
+  if (meta.kind) attrs["data-ccoding-kind"] = meta.kind;
+  if (meta.status) attrs["data-ccoding-status"] = meta.status;
+  if (meta.stereotype) attrs["data-ccoding-stereotype"] = meta.stereotype;
+
+  if (meta.status === "rejected" && hideRejected) {
+    attrs["data-ccoding-rejected-hidden"] = "true";
   }
 
-  return classes;
+  return attrs;
 }
 
 /**
- * Compute CSS class list for a ccoding canvas edge.
- * Only ghost edges get extra styling.
+ * Compute data-attribute map for a ccoding canvas edge.
  */
-export function edgeClasses(meta: EdgeMetadata): string[] {
-  const classes: string[] = ["ccoding-edge"];
+export function edgeAttributes(
+  meta: EdgeMetadata,
+): Record<string, string | undefined> {
+  const attrs: Record<string, string | undefined> = {};
 
-  if (meta.status === "proposed") {
-    classes.push("ccoding-ghost");
-  }
+  if (meta.relation) attrs["data-ccoding-relation"] = meta.relation;
+  if (meta.status) attrs["data-ccoding-status"] = meta.status;
 
-  return classes;
+  return attrs;
 }

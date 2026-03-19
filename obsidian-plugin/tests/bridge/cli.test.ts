@@ -30,8 +30,15 @@ function mockExecFile(
       } else {
         cb(null, stdout, stderr);
       }
+      return { stdin: { write: vi.fn(), end: vi.fn() } };
     },
   );
+}
+
+/** Capture the last execFile call args. */
+function lastCallArgs(): string[] {
+  const calls = (execFile as any).mock.calls;
+  return calls[calls.length - 1][1]; // args parameter
 }
 
 describe("CcodingBridge", () => {
@@ -98,5 +105,83 @@ describe("CcodingBridge", () => {
       },
     );
     expect(await bridge.isAvailable()).toBe(false);
+  });
+
+  // --- New bridge method tests ---
+
+  it("constructs propose command with all options", async () => {
+    mockExecFile("node-new-123", "", 0);
+    await bridge.propose({
+      kind: "class",
+      name: "MyClass",
+      stereotype: "abstract",
+      rationale: "Need this for caching",
+    });
+    const args = lastCallArgs();
+    expect(args).toContain("propose");
+    expect(args).toContain("--kind");
+    expect(args).toContain("class");
+    expect(args).toContain("--name");
+    expect(args).toContain("MyClass");
+    expect(args).toContain("--stereotype");
+    expect(args).toContain("abstract");
+    expect(args).toContain("--rationale");
+    expect(args).toContain("Need this for caching");
+  });
+
+  it("constructs propose command without optional args", async () => {
+    mockExecFile("node-new-456", "", 0);
+    await bridge.propose({ kind: "interface", name: "Parser" });
+    const args = lastCallArgs();
+    expect(args).toContain("propose");
+    expect(args).toContain("--name");
+    expect(args).toContain("Parser");
+    expect(args).not.toContain("--stereotype");
+    expect(args).not.toContain("--rationale");
+  });
+
+  it("constructs propose-edge command correctly", async () => {
+    mockExecFile("edge-new-789", "", 0);
+    await bridge.proposeEdge({
+      from: "node-a",
+      to: "node-b",
+      relation: "inherits",
+      label: "extends",
+      rationale: "Parent class",
+    });
+    const args = lastCallArgs();
+    expect(args).toContain("propose-edge");
+    expect(args).toContain("--from");
+    expect(args).toContain("node-a");
+    expect(args).toContain("--to");
+    expect(args).toContain("node-b");
+    expect(args).toContain("--relation");
+    expect(args).toContain("inherits");
+    expect(args).toContain("--label");
+    expect(args).toContain("extends");
+  });
+
+  it("calls ghosts command", async () => {
+    mockExecFile("2 proposals pending", "", 0);
+    const result = await bridge.ghosts();
+    expect(result.success).toBe(true);
+    const args = lastCallArgs();
+    expect(args).toContain("ghosts");
+  });
+
+  it("calls diff command", async () => {
+    mockExecFile("no changes", "", 0);
+    const result = await bridge.diff();
+    expect(result.success).toBe(true);
+    const args = lastCallArgs();
+    expect(args).toContain("diff");
+  });
+
+  it("calls show command with qualified name", async () => {
+    mockExecFile("class content", "", 0);
+    await bridge.show("parser.DocumentParser");
+    const args = lastCallArgs();
+    expect(args).toContain("show");
+    expect(args).toContain("parser.DocumentParser");
   });
 });

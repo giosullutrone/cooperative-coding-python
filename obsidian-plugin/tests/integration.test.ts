@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { parseCcodingMetadata, parseEdgeMetadata } from "../src/types";
-import { nodeClasses, edgeClasses } from "../src/styling/class-mapper";
+import { nodeAttributes, edgeAttributes } from "../src/styling/class-mapper";
 import { buildGraph, assignLayers, computePositions } from "../src/layout/graph";
 import type { LayoutNode, LayoutEdge } from "../src/layout/graph";
 
@@ -23,7 +23,7 @@ const fixture = existsSync(fixturePath)
       ],
     };
 
-describe("Integration: fixture → styling → layout", () => {
+describe("Integration: fixture → attributes → layout", () => {
   it("parses all ccoding nodes from fixture", () => {
     const ccodingNodes = fixture.nodes.filter(
       (n: any) => parseCcodingMetadata(n.ccoding) !== null,
@@ -31,22 +31,21 @@ describe("Integration: fixture → styling → layout", () => {
     expect(ccodingNodes.length).toBeGreaterThan(0);
   });
 
-  it("generates CSS classes for fixture nodes", () => {
+  it("generates data attributes for fixture nodes", () => {
     for (const node of fixture.nodes) {
       const meta = parseCcodingMetadata(node.ccoding);
       if (!meta) continue;
-      const classes = nodeClasses(meta, false);
-      expect(classes).toContain("ccoding-node");
-      expect(classes.length).toBeGreaterThanOrEqual(2);
+      const attrs = nodeAttributes(meta, false);
+      expect(attrs["data-ccoding-status"]).toBeDefined();
     }
   });
 
-  it("generates CSS classes for fixture edges", () => {
+  it("generates data attributes for fixture edges", () => {
     for (const edge of fixture.edges) {
       const meta = parseEdgeMetadata(edge.ccoding);
       if (!meta) continue;
-      const classes = edgeClasses(meta);
-      expect(classes).toContain("ccoding-edge");
+      const attrs = edgeAttributes(meta);
+      expect(attrs["data-ccoding-relation"]).toBeDefined();
     }
   });
 
