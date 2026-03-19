@@ -686,12 +686,63 @@ def sync(
         elem = code_element_map[qname]
         node = canvas_node_map.get(qname)
         if node:
-            content = _element_to_class_content(elem)
+            # Determine which methods are significant enough to promote
+            significant_methods = [m for m in elem.methods if _is_significant_method(m)]
+            promoted_methods_set: set[str] = {m.name for m in significant_methods}
+
+            content = _element_to_class_content(elem, promoted_methods_set if promoted_methods_set else None)
             text = render_class_node(content)
             node.text = text
             state.elements[qname].canvas_hash = content_hash(text)
             state.elements[qname].code_hash = code_hashes[qname]
             result.code_to_canvas.append(qname)
+
+            # Build a map of existing detail nodes for this class (by method name)
+            # so we can update them in place or create new ones.
+            existing_detail_nodes: dict[str, Node] = {}
+            for edge in canvas.edges:
+                if (
+                    edge.from_node == node.id
+                    and edge.ccoding
+                    and edge.ccoding.relation == "detail"
+                ):
+                    target = next(
+                        (n for n in canvas.nodes if n.id == edge.to_node), None
+                    )
+                    if target and target.ccoding:
+                        method_name = (target.ccoding.qualified_name or "").rsplit(".", 1)[-1]
+                        existing_detail_nodes[method_name] = target
+
+            for method_idx, method in enumerate(significant_methods):
+                if method.name in existing_detail_nodes:
+                    # Update the existing detail node text
+                    detail_node = existing_detail_nodes[method.name]
+                    updated = _method_to_detail_node(
+                        method=method,
+                        class_qname=qname,
+                        x=detail_node.x,
+                        y=detail_node.y,
+                        language=config.language,
+                    )
+                    detail_node.text = updated.text
+                else:
+                    # Create a new detail node and edge
+                    detail_node = _method_to_detail_node(
+                        method=method,
+                        class_qname=qname,
+                        x=node.x + _NODE_WIDTH + _GRID_SPACING_X,
+                        y=node.y + method_idx * (_NODE_HEIGHT + 20),
+                        language=config.language,
+                    )
+                    canvas.nodes.append(detail_node)
+                    detail_edge = Edge(
+                        id=_edge_id(),
+                        from_node=node.id,
+                        to_node=detail_node.id,
+                        label=method.name,
+                        ccoding=EdgeMetadata(relation="detail", status="accepted"),
+                    )
+                    canvas.edges.append(detail_edge)
 
     # Apply changes: canvas_added (accepted nodes only) -> generate code
     for qname in diff.canvas_added:
@@ -814,6 +865,11 @@ def sync_status(project_root: Path) -> str:
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
+            # Only class nodes participate in the bidirectional sync diff.
+            # Method/field detail nodes are managed by the class node and must
+            # not be treated as independent canvas-added elements.
+            if node.ccoding.kind != "class":
+                continue
             if node.ccoding.status in ("proposed", "rejected", "stale"):
                 continue
             canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
