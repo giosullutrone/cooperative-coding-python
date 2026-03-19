@@ -456,7 +456,14 @@ def sync(
         state.elements[qname].code_hash = content_hash(code_text)
         result.canvas_to_code.append(qname)
 
-    # canvas_deleted and code_deleted: skip for now (soft delete in future)
+    # Handle code_deleted: mark canvas nodes as stale
+    for qname in diff.code_deleted:
+        node = canvas_node_map.get(qname)
+        if node and node.ccoding:
+            node.ccoding.status = "stale"
+            result.code_to_canvas.append(qname)
+
+    # canvas_deleted: skip for now (soft delete in future)
 
     # Write updated canvas and state
     write_canvas(canvas, canvas_path)

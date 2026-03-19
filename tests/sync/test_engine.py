@@ -33,9 +33,13 @@ class TestImportCodebase:
 
 class TestSync:
     def test_sync_no_changes(self, tmp_project: Path, fixtures_dir: Path):
+        import shutil
         canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+        for f in (fixtures_dir / "sample_python").glob("*.py"):
+            shutil.copy(f, src_dir / f.name)
         import_codebase(
-            source_dir=fixtures_dir / "sample_python",
+            source_dir=src_dir,
             canvas_path=canvas_path,
             project_root=tmp_project,
             language="python",
@@ -88,3 +92,32 @@ class TestSyncSkipsRejected:
         qname = target_node.ccoding.qualified_name
         assert qname not in result.canvas_to_code
         assert qname not in result.code_to_canvas
+
+
+class TestSyncStaleHandling:
+    def test_code_deleted_marks_canvas_stale(self, tmp_project: Path, fixtures_dir: Path):
+        """When code is deleted, the sync engine must mark the canvas node as stale."""
+        import shutil
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+        for f in (fixtures_dir / "sample_python").glob("*.py"):
+            shutil.copy(f, src_dir / f.name)
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+        # Find a source file and delete it
+        state = load_sync_state(tmp_project)
+        qname = next(iter(state.elements))
+        elem_state = state.elements[qname]
+        source_file = tmp_project / elem_state.source_path
+        source_file.unlink()
+
+        # Sync should detect deletion and mark the canvas node stale
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        canvas = read_canvas(canvas_path)
+        node = canvas.find_by_qualified_name(qname)
+        assert node is not None
+        assert node.ccoding.status == "stale"
