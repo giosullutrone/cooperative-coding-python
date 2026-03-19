@@ -132,9 +132,11 @@ class TestEdgeAwareGeneration:
         source = generate_class(content, edges=[edge])
         ast.parse(source)
         assert "from core.config import Config" in source
-        # depends should NOT add a base or a field
+        # depends should NOT add a base or a field (but may appear in Collaborators)
         assert "class Runner(Config)" not in source
-        assert "Config" not in source.split("from core.config import Config")[1]
+        # After the closing docstring quotes, Config must not appear as a field
+        body_after_docstring = source.split('"""')[-1]
+        assert "Config" not in body_after_docstring
 
     def test_stereotype_plus_inherits(self):
         """abstract stereotype + inherits edge → both ABC and BaseParser in bases."""
@@ -233,6 +235,42 @@ class TestSnakeCaseFieldName:
     def test_em_dash_separator(self):
         from ccoding.code.generator import _field_name_from_label
         assert _field_name_from_label("config \u2014 parser settings", "ParserConfig") == "config"
+
+
+class TestCollaboratorsSection:
+    def test_collaborators_generated_from_edges(self):
+        from ccoding.canvas.markdown import ClassContent, FieldEntry, MethodEntry
+        from ccoding.code.generator import generate_class, EdgeInfo
+        content = ClassContent(
+            name="DocumentParser",
+            stereotype="protocol",
+            responsibility="Parse documents.",
+            fields=[],
+            methods=[],
+        )
+        edges = [
+            EdgeInfo(relation="composes", target_name="ParserConfig",
+                     target_qname="config.ParserConfig", label="config"),
+            EdgeInfo(relation="depends", target_name="TokenStream",
+                     target_qname="tokens.TokenStream", label=None),
+        ]
+        code = generate_class(content, "python", edges=edges)
+        assert "Collaborators:" in code
+        assert "ParserConfig" in code.split("Collaborators:")[1].split('"""')[0]
+        assert "TokenStream" in code.split("Collaborators:")[1].split('"""')[0]
+
+    def test_no_collaborators_without_edges(self):
+        from ccoding.canvas.markdown import ClassContent, FieldEntry, MethodEntry
+        from ccoding.code.generator import generate_class
+        content = ClassContent(
+            name="Simple",
+            stereotype=None,
+            responsibility="A simple class.",
+            fields=[],
+            methods=[],
+        )
+        code = generate_class(content, "python")
+        assert "Collaborators:" not in code
 
 
 class TestTypeTranslation:

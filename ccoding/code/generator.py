@@ -225,6 +225,22 @@ def generate_class(
     if content.responsibility:
         docstring_sections["responsibility"] = content.responsibility
 
+    # Build Collaborators section from edges (spec Python binding §3.1)
+    if edges:
+        collab_parts: list[str] = []
+        for edge in edges:
+            if edge.relation == "inherits":
+                collab_parts.append(f"{edge.target_name}: Base class.")
+            elif edge.relation == "implements":
+                collab_parts.append(f"{edge.target_name}: Implemented protocol.")
+            elif edge.relation == "composes":
+                field_name = _field_name_from_label(edge.label, edge.target_name)
+                collab_parts.append(f"{edge.target_name}: Composed as {field_name}.")
+            elif edge.relation == "depends":
+                collab_parts.append(f"{edge.target_name}: Dependency.")
+        if collab_parts:
+            docstring_sections["collaborators"] = "\n".join(collab_parts)
+
     docstring_body = render_docstring(docstring_sections, indent=4)
     docstring_lines = ['    """' + docstring_body + '    """']
 
