@@ -70,7 +70,9 @@ def check_sync(project_root: Path) -> tuple[int, str]:
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            if node.ccoding.status == "proposed":
+            if node.ccoding.kind != "class":
+                continue
+            if node.ccoding.status in ("proposed", "rejected", "stale"):
                 continue
             canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
 
