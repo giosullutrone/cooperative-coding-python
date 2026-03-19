@@ -59,6 +59,10 @@ export class CcodingBridge {
     return this.run(["reconsider", id]);
   }
 
+  restore(id: string): Promise<CommandResult> {
+    return this.run(["restore", id]);
+  }
+
   acceptAll(): Promise<CommandResult> {
     return this.run(["accept-all"]);
   }

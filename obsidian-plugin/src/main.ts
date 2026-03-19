@@ -10,6 +10,7 @@ import {
   acceptElement,
   rejectElement,
   reconsiderElement,
+  restoreElement,
   acceptAll,
   rejectAll,
   syncCanvas,
@@ -242,6 +243,12 @@ export default class CooperativeCodingPlugin extends Plugin {
               menu.addItem((item: any) =>
                 item.setTitle("Reconsider").setIcon("rotate-ccw")
                   .onClick(() => this.runAction(() => reconsiderElement(this.bridge, node.id))),
+              );
+            } else if (meta.status === "stale") {
+              menu.addSeparator();
+              menu.addItem((item: any) =>
+                item.setTitle("Restore (re-link to code)").setIcon("refresh-cw")
+                  .onClick(() => this.runAction(() => restoreElement(this.bridge, node.id))),
               );
             }
           }

@@ -66,6 +66,14 @@ export async function reconsiderElement(
   );
 }
 
+/** Restore a stale node to accepted status. */
+export async function restoreElement(
+  bridge: CcodingBridge,
+  id: string,
+): Promise<void> {
+  await runAction(bridge, () => bridge.restore(id), "Restoring stale element");
+}
+
 export async function acceptAll(bridge: CcodingBridge): Promise<void> {
   await runAction(
     bridge,
