@@ -26,7 +26,7 @@ from ccoding.canvas.model import (
 )
 from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
-from ccoding.code.generator import generate_class, deprecate_class
+from ccoding.code.generator import generate_class, deprecate_class, EdgeInfo
 from ccoding.code.parser import PythonAstParser, ClassElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
@@ -157,6 +157,47 @@ def _source_rel(source_path: str | None, project_root: Path) -> str:
         return str(Path(source_path).relative_to(project_root))
     except ValueError:
         return source_path
+
+
+_ALLOWED_RELATIONS = ("inherits", "implements", "composes", "depends")
+
+
+def _collect_edge_info(canvas: "Canvas", node_id: str) -> list[EdgeInfo]:
+    """Return EdgeInfo objects for accepted edges originating from *node_id*.
+
+    Only edges whose ``ccoding.relation`` is in the allow-list and whose
+    ``ccoding.status`` is ``"accepted"`` are included.  The target node is
+    looked up to obtain ``target_name`` (last segment of its qualified name)
+    and ``target_qname``.
+    """
+    # Build a quick id->node lookup
+    node_by_id: dict[str, Node] = {n.id: n for n in canvas.nodes}
+
+    result: list[EdgeInfo] = []
+    for edge in canvas.edges:
+        if edge.from_node != node_id:
+            continue
+        if not edge.ccoding:
+            continue
+        if edge.ccoding.status != "accepted":
+            continue
+        if edge.ccoding.relation not in _ALLOWED_RELATIONS:
+            continue
+
+        target_node = node_by_id.get(edge.to_node)
+        if not target_node or not target_node.ccoding:
+            continue
+        target_qname = target_node.ccoding.qualified_name or ""
+        target_name = target_qname.rsplit(".", 1)[-1] if target_qname else target_node.id
+
+        result.append(EdgeInfo(
+            relation=edge.ccoding.relation,
+            target_name=target_name,
+            target_qname=target_qname,
+            label=edge.label,
+        ))
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +447,8 @@ def sync(
             continue
 
         content = parse_class_node(node.text)
-        code_text = generate_class(content, config.language)
+        edge_info = _collect_edge_info(canvas, node.id)
+        code_text = generate_class(content, config.language, edges=edge_info)
 
         # Determine output path from the qualified name
         parts = qname.rsplit(".", 1)
@@ -439,7 +481,8 @@ def sync(
             continue
 
         content = parse_class_node(node.text)
-        code_text = generate_class(content, config.language)
+        edge_info = _collect_edge_info(canvas, node.id)
+        code_text = generate_class(content, config.language, edges=edge_info)
 
         # Find existing source path from state
         elem_state = state.elements.get(qname)

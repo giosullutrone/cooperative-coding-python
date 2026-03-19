@@ -185,3 +185,145 @@ class TestSyncStaleHandling:
         node = canvas.find_by_qualified_name(qname)
         assert node is not None
         assert node.ccoding.status == "stale"
+
+
+class TestSyncEdgeAwareCodeGeneration:
+    """Verify that canvas edges are read and passed to the code generator."""
+
+    def _make_canvas_json(
+        self,
+        nodes: list[dict],
+        edges: list[dict],
+    ) -> str:
+        return json.dumps({"nodes": nodes, "edges": edges})
+
+    def test_canvas_inherits_edge_generates_base_class(self, tmp_project: Path):
+        """An 'inherits' edge should cause the child class to extend the base class."""
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+
+        canvas_data = self._make_canvas_json(
+            nodes=[
+                {
+                    "id": "node-base",
+                    "type": "text",
+                    "x": 0, "y": 0, "width": 320, "height": 280,
+                    "text": "## BaseParser\n\n**Responsibility:** Base parser class.\n",
+                    "ccoding": {
+                        "kind": "class",
+                        "qualifiedName": "parsers.base.BaseParser",
+                        "status": "accepted",
+                        "language": "python",
+                        "source": "src/parsers/base.py",
+                    },
+                },
+                {
+                    "id": "node-child",
+                    "type": "text",
+                    "x": 400, "y": 0, "width": 320, "height": 280,
+                    "text": "## CsvParser\n\n**Responsibility:** Parses CSV files.\n",
+                    "ccoding": {
+                        "kind": "class",
+                        "qualifiedName": "parsers.csv_parser.CsvParser",
+                        "status": "accepted",
+                        "language": "python",
+                        "source": "src/parsers/csv_parser.py",
+                    },
+                },
+            ],
+            edges=[
+                {
+                    "id": "edge-001",
+                    "fromNode": "node-child",
+                    "toNode": "node-base",
+                    "label": "inherits",
+                    "ccoding": {
+                        "relation": "inherits",
+                        "status": "accepted",
+                    },
+                },
+            ],
+        )
+        canvas_path.write_text(canvas_data)
+
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+
+        # CsvParser should have been generated
+        assert any("CsvParser" in qname for qname in result.canvas_to_code)
+
+        child_file = src_dir / "parsers" / "csv_parser.py"
+        assert child_file.exists(), f"Expected generated file at {child_file}"
+        code = child_file.read_text()
+
+        # The child class declaration should extend BaseParser
+        assert "BaseParser" in code, (
+            f"Expected 'BaseParser' in generated code:\n{code}"
+        )
+        assert "class CsvParser(BaseParser)" in code or "class CsvParser(BaseParser," in code, (
+            f"Expected class declaration with BaseParser base in:\n{code}"
+        )
+
+    def test_canvas_composes_edge_generates_field(self, tmp_project: Path):
+        """A 'composes' edge with a label should produce a typed field in the child class."""
+        canvas_path = tmp_project / "design.canvas"
+        src_dir = tmp_project / "src"
+
+        canvas_data = self._make_canvas_json(
+            nodes=[
+                {
+                    "id": "node-config",
+                    "type": "text",
+                    "x": 0, "y": 0, "width": 320, "height": 280,
+                    "text": "## ParserConfig\n\n**Responsibility:** Parser configuration holder.\n",
+                    "ccoding": {
+                        "kind": "class",
+                        "qualifiedName": "parsers.config.ParserConfig",
+                        "status": "accepted",
+                        "language": "python",
+                        "source": "src/parsers/config.py",
+                    },
+                },
+                {
+                    "id": "node-parser",
+                    "type": "text",
+                    "x": 400, "y": 0, "width": 320, "height": 280,
+                    "text": "## SmartParser\n\n**Responsibility:** Smart parser that uses config.\n",
+                    "ccoding": {
+                        "kind": "class",
+                        "qualifiedName": "parsers.smart.SmartParser",
+                        "status": "accepted",
+                        "language": "python",
+                        "source": "src/parsers/smart.py",
+                    },
+                },
+            ],
+            edges=[
+                {
+                    "id": "edge-002",
+                    "fromNode": "node-parser",
+                    "toNode": "node-config",
+                    "label": "config \u2014 Parser settings",
+                    "ccoding": {
+                        "relation": "composes",
+                        "status": "accepted",
+                    },
+                },
+            ],
+        )
+        canvas_path.write_text(canvas_data)
+
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+
+        # SmartParser should have been generated
+        assert any("SmartParser" in qname for qname in result.canvas_to_code), (
+            f"Expected SmartParser in canvas_to_code, got: {result.canvas_to_code}"
+        )
+
+        parser_file = src_dir / "parsers" / "smart.py"
+        assert parser_file.exists(), f"Expected generated file at {parser_file}"
+        code = parser_file.read_text()
+
+        # The composed field should appear as "config: ParserConfig"
+        assert "config: ParserConfig" in code, (
+            f"Expected 'config: ParserConfig' field in generated code:\n{code}"
+        )
