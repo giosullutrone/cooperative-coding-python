@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ccoding.canvas.markdown import ClassContent, MethodContent, MethodEntry, SignatureEntry
 from ccoding.code.docstring import render_docstring
+from ccoding.code.types import canvas_to_python
 
 
 @dataclass
@@ -129,6 +130,8 @@ def _render_method_stub(
         lines.append(pad + dec)
 
     params, ret = _parse_method_signature(entry.signature)
+    params = [(name, canvas_to_python(type_) if type_ else "") for name, type_ in params]
+    ret = canvas_to_python(ret) if ret else ret
     def_line = _build_def_line(entry.name, params, ret)
     lines.append(pad + def_line)
 
@@ -200,7 +203,7 @@ def generate_class(
                 edge_bases.append(edge.target_name)
         elif edge.relation == "composes":
             field_name = _field_name_from_label(edge.label, edge.target_name)
-            edge_field_lines.append(f"    {field_name}: {edge.target_name}")
+            edge_field_lines.append(f"    {field_name}: {canvas_to_python(edge.target_name)}")
         # "depends" → import only (already added above)
 
     # Build the full bases list: stereotype base first, then edge bases
@@ -229,7 +232,7 @@ def generate_class(
     # Content fields first, then edge-derived composition fields
     field_lines: list[str] = []
     for f in content.fields:
-        field_lines.append(f"    {f.name}: {f.type}")
+        field_lines.append(f"    {f.name}: {canvas_to_python(f.type)}")
     field_lines.extend(edge_field_lines)
 
     # --- methods -----------------------------------------------------------
@@ -306,14 +309,14 @@ def generate_method(content: MethodContent) -> str:
     param_parts = ["self"]
     for entry in content.signature_in:
         if entry.type:
-            param_parts.append(f"{entry.name}: {entry.type}")
+            param_parts.append(f"{entry.name}: {canvas_to_python(entry.type)}")
         else:
             param_parts.append(entry.name)
     param_str = ", ".join(param_parts)
 
     ret_type = ""
     if content.signature_out and content.signature_out.type:
-        ret_type = content.signature_out.type
+        ret_type = canvas_to_python(content.signature_out.type)
 
     if ret_type:
         def_line = f"def {method_name}({param_str}) -> {ret_type}:"

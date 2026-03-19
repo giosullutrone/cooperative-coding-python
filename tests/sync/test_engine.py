@@ -608,3 +608,29 @@ class TestSpecVersion:
         ccoding_meta = raw.get("ccoding", {})
         assert "specVersion" in ccoding_meta
         assert ccoding_meta["specVersion"] == "1.0.0"
+
+
+class TestTypeTranslationInSync:
+    def test_python_types_translated_to_canvas(self, tmp_project: Path):
+        """Python types in code must be translated to canvas-neutral types."""
+        canvas_path = tmp_project / "design.canvas"
+        src = tmp_project / "src"
+        (src / "typed.py").write_text(
+            'class Typed:\n'
+            '    """A class with Python-native types.\n\n'
+            '    Responsibility:\n        Test type translation.\n    """\n'
+            '    items: list[str]\n'
+            '    lookup: dict[str, int]\n'
+        )
+        from ccoding.sync.engine import sync
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        from ccoding.canvas.reader import read_canvas
+        canvas = read_canvas(canvas_path)
+        node = next(
+            (n for n in canvas.nodes if n.ccoding and n.ccoding.qualified_name == "typed.Typed"),
+            None
+        )
+        assert node is not None
+        # Canvas should use language-neutral types, not Python-native
+        assert "List<String>" in node.text
+        assert "list[str]" not in node.text

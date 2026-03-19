@@ -233,3 +233,33 @@ class TestSnakeCaseFieldName:
     def test_em_dash_separator(self):
         from ccoding.code.generator import _field_name_from_label
         assert _field_name_from_label("config \u2014 parser settings", "ParserConfig") == "config"
+
+
+class TestTypeTranslation:
+    def test_field_types_translated_to_python(self):
+        from ccoding.canvas.markdown import ClassContent, FieldEntry, MethodEntry
+        from ccoding.code.generator import generate_class
+        content = ClassContent(
+            name="Foo",
+            stereotype=None,
+            responsibility="Test",
+            fields=[FieldEntry(name="items", type="List<String>")],
+            methods=[],
+        )
+        code = generate_class(content, "python")
+        assert "list[str]" in code
+        assert "List<String>" not in code
+
+    def test_method_param_types_translated(self):
+        from ccoding.canvas.markdown import ClassContent, FieldEntry, MethodEntry
+        from ccoding.code.generator import generate_class
+        content = ClassContent(
+            name="Foo",
+            stereotype=None,
+            responsibility="Test",
+            fields=[],
+            methods=[MethodEntry(name="run", signature="(x: Integer) -> Boolean")],
+        )
+        code = generate_class(content, "python")
+        assert "x: int" in code
+        assert "-> bool" in code

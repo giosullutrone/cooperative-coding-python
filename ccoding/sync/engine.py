@@ -31,6 +31,7 @@ from ccoding.canvas.model import (
 from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
 from ccoding.code.generator import generate_class, deprecate_class, EdgeInfo
+from ccoding.code.types import python_to_canvas
 from ccoding.code.parser import PythonAstParser, ClassElement, MethodElement, ImportElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
@@ -111,7 +112,7 @@ def _element_to_class_content(
     fields = [
         FieldEntry(
             name=f.name,
-            type=f.type_annotation or "Any",
+            type=python_to_canvas(f.type_annotation) if f.type_annotation else "Any",
         )
         for f in elem.fields
     ]
@@ -123,12 +124,13 @@ def _element_to_class_content(
         param_parts = []
         for p in m.parameters:
             if p.type_annotation:
-                param_parts.append(f"{p.name}: {p.type_annotation}")
+                param_parts.append(f"{p.name}: {python_to_canvas(p.type_annotation)}")
             else:
                 param_parts.append(p.name)
         sig_params = ", ".join(param_parts)
-        if m.return_type:
-            sig = f"({sig_params}) -> {m.return_type}" if sig_params else f"() -> {m.return_type}"
+        ret_type = python_to_canvas(m.return_type) if m.return_type else ""
+        if ret_type:
+            sig = f"({sig_params}) -> {ret_type}" if sig_params else f"() -> {ret_type}"
         elif sig_params:
             sig = f"({sig_params})"
         else:
@@ -196,7 +198,7 @@ def _method_to_detail_node(
     signature_in: list[SignatureEntry] = [
         SignatureEntry(
             name=p.name,
-            type=p.type_annotation or "Any",
+            type=python_to_canvas(p.type_annotation) if p.type_annotation else "Any",
             description="",
         )
         for p in method.parameters
@@ -206,7 +208,7 @@ def _method_to_detail_node(
     # Build signature_out from return_type
     signature_out: SignatureEntry | None = None
     if method.return_type:
-        signature_out = SignatureEntry(name="", type=method.return_type, description="")
+        signature_out = SignatureEntry(name="", type=python_to_canvas(method.return_type), description="")
 
     # Parse raises from docstring section "raises": each line "ExcType: description"
     raises: list[SignatureEntry] = []
