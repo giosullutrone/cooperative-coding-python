@@ -129,3 +129,14 @@ class TestCanvas:
                            ccoding=EdgeMetadata(relation="detail"))
         canvas = Canvas(nodes=[class_node, method_node], edges=[detail_edge])
         assert canvas.find_detail_nodes("n1") == [method_node]
+
+
+def test_stale_nodes():
+    canvas = Canvas(nodes=[
+        Node(id="n1", type="text", x=0, y=0, width=300, height=400,
+             text="## A", ccoding=CcodingMetadata(kind="class", status="stale")),
+        Node(id="n2", type="text", x=0, y=0, width=300, height=400,
+             text="## B", ccoding=CcodingMetadata(kind="class", status="accepted")),
+    ], edges=[])
+    assert len(canvas.stale_nodes()) == 1
+    assert canvas.stale_nodes()[0].id == "n1"

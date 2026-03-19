@@ -94,3 +94,6 @@ class Canvas:
             e for e in self.edges
             if e.ccoding and e.ccoding.status == "proposed"
         ]
+
+    def stale_nodes(self) -> list[Node]:
+        return [n for n in self.nodes if n.ccoding and n.ccoding.status == "stale"]

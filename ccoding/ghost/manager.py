@@ -9,6 +9,7 @@ from ccoding.canvas.model import Canvas, Node, Edge, CcodingMetadata, EdgeMetada
 _PROPOSED = "proposed"
 _ACCEPTED = "accepted"
 _REJECTED = "rejected"
+_STALE = "stale"
 
 # Key used in Edge._extra to mark that the rejection was a cascade from a node
 _CASCADE_KEY = "_ccoding_cascade_rejected"
