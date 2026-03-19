@@ -17,8 +17,10 @@ This repository contains three integrated components:
 ### CLI
 
 ```bash
-pip install cooperative-coding
+pip install -e .
 ```
+
+> (Not yet published to PyPI — install from source)
 
 ### Obsidian Plugin
 
@@ -60,6 +62,40 @@ ccoding propose --kind class --name MyClass
 ccoding accept <node-id>
 ccoding reject <node-id>
 ```
+
+## CLI Reference
+
+### Core
+
+| Command | Description |
+|---------|-------------|
+| `init` | Initialise a new ccoding project in the current directory |
+| `sync` | Perform bidirectional sync between canvas and code |
+| `status` | Show the sync status between canvas and code |
+| `diff` | Dry-run sync: show what would change without applying changes |
+| `import` | Import an existing codebase into a canvas file |
+
+### Proposals
+
+| Command | Description |
+|---------|-------------|
+| `propose` | Propose a new ghost node in the canvas |
+| `propose-edge` | Propose a new ghost edge between two nodes in the canvas |
+| `accept` | Accept a proposed ghost node or edge by ID |
+| `reject` | Reject a proposed ghost node or edge by ID |
+| `reconsider` | Restore a rejected ghost node or edge to proposed status |
+| `accept-all` | Accept all pending ghost proposals in the canvas |
+| `reject-all` | Reject all pending ghost proposals in the canvas |
+| `restore` | Restore a stale node back to accepted status |
+| `ghosts` | List all ghost (proposed) nodes and edges in the canvas |
+
+### Utilities
+
+| Command | Description |
+|---------|-------------|
+| `show` | Show the canvas content for a node identified by its qualified name |
+| `set-text` | Set the text content of a canvas node by ID |
+| `check` | Check whether canvas and code are in sync (used by git pre-commit hook) |
 
 ## Development
 
