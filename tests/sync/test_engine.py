@@ -722,3 +722,50 @@ class TestPreserveMethodBodies:
         assert "self._execute(task)" in code, "Method body was overwritten with a stub"
         # Verify the updated responsibility made it into the docstring
         assert "priority queue" in code
+
+
+class TestFieldDetailNodePromotion:
+    def test_field_with_responsibility_promoted(self, tmp_project: Path):
+        """A field with a responsibility comment should get a detail node."""
+        canvas_path = tmp_project / "design.canvas"
+        src = tmp_project / "src"
+
+        (src / "config.py").write_text(
+            'class Config:\n'
+            '    """App config.\n\n'
+            '    Responsibility:\n'
+            '        Hold configuration.\n'
+            '    """\n\n'
+            '    # Responsibility: Holds parser configuration including tokenizer\n'
+            '    # settings and output format preferences.\n'
+            '    # Constraints: Immutable after initialization.\n'
+            '    config: "ParserConfig"\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        canvas = read_canvas(canvas_path)
+        field_nodes = [
+            n for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "field"
+        ]
+        assert len(field_nodes) >= 1, "Expected a field detail node for config"
+
+    def test_simple_field_not_promoted(self, tmp_project: Path):
+        """A field without design documentation should not get a detail node."""
+        canvas_path = tmp_project / "design.canvas"
+        src = tmp_project / "src"
+
+        (src / "simple.py").write_text(
+            'class Simple:\n'
+            '    """Simple class.\n\n'
+            '    Responsibility:\n'
+            '        Hold data.\n'
+            '    """\n\n'
+            '    count: int\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        canvas = read_canvas(canvas_path)
+        field_nodes = [
+            n for n in canvas.nodes
+            if n.ccoding and n.ccoding.kind == "field"
+        ]
+        assert len(field_nodes) == 0

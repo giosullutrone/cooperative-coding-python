@@ -184,6 +184,60 @@ def _parse_method(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodEl
     )
 
 
+_COMMENT_SECTION_RE = re.compile(r"^#\s*(?P<key>[A-Za-z][A-Za-z ]+?):\s*(?P<value>.*)$")
+
+
+def _parse_field_comment_sections(source_lines: list[str], field_lineno: int) -> dict[str, str]:
+    """Parse comment lines above a field declaration into section key/value pairs.
+
+    Scans upward from *field_lineno* (1-based) collecting contiguous ``#`` comment
+    lines.  Each line matching ``# Key: value`` starts or continues a section.
+    Continuation lines (``# more text``) that don't match the pattern are appended
+    to the most recent section.
+    """
+    # Collect contiguous comment lines above the field declaration
+    comment_lines: list[str] = []
+    idx = field_lineno - 2  # convert to 0-based, then step one line up
+    while idx >= 0:
+        stripped = source_lines[idx].strip()
+        if stripped.startswith("#"):
+            comment_lines.append(stripped)
+            idx -= 1
+        elif stripped == "":
+            # Allow blank lines within the comment block
+            idx -= 1
+        else:
+            break
+
+    # Reverse so they are in top-to-bottom order
+    comment_lines.reverse()
+
+    sections: dict[str, str] = {}
+    current_key: str | None = None
+    current_parts: list[str] = []
+
+    for line in comment_lines:
+        # Strip the leading '# ' or '#'
+        text = line.lstrip("#").strip()
+        m = _COMMENT_SECTION_RE.match(line)
+        if m:
+            # Flush previous section
+            if current_key is not None:
+                sections[current_key] = " ".join(current_parts).strip()
+            current_key = m.group("key").lower()
+            value = m.group("value").strip()
+            current_parts = [value] if value else []
+        elif current_key is not None:
+            # Continuation of the current section
+            current_parts.append(text)
+
+    # Flush last section
+    if current_key is not None:
+        sections[current_key] = " ".join(current_parts).strip()
+
+    return sections
+
+
 def _parse_class(node: ast.ClassDef, source_path: str | None = None) -> ClassElement:
     """Parse a class AST node into a ClassElement."""
     # Base classes
@@ -232,6 +286,24 @@ def _parse_class(node: ast.ClassDef, source_path: str | None = None) -> ClassEle
                             FieldElement(name=fname, type_annotation=ftype, default_value=fdefault)
                         )
                         seen_field_names.add(fname)
+
+    # Second pass: populate comment_sections for class-level fields
+    if source_path:
+        try:
+            source_lines = Path(source_path).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            source_lines = []
+        if source_lines:
+            field_by_name = {f.name: f for f in fields}
+            for item in node.body:
+                if (
+                    isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                    and item.target.id in field_by_name
+                ):
+                    sections = _parse_field_comment_sections(source_lines, item.lineno)
+                    if sections:
+                        field_by_name[item.target.id].comment_sections = sections
 
     # Methods
     methods: list[MethodElement] = []

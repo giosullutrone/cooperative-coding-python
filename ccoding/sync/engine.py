@@ -13,11 +13,13 @@ from uuid import uuid4
 
 from ccoding.canvas.markdown import (
     ClassContent,
+    FieldContent,
     FieldEntry,
     MethodEntry,
     MethodContent,
     SignatureEntry,
     render_class_node,
+    render_field_node,
     render_method_node,
     parse_class_node,
 )
@@ -32,7 +34,7 @@ from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
 from ccoding.code.generator import generate_class, deprecate_class, EdgeInfo
 from ccoding.code.types import python_to_canvas
-from ccoding.code.parser import PythonAstParser, ClassElement, MethodElement, ImportElement
+from ccoding.code.parser import PythonAstParser, ClassElement, FieldElement, MethodElement, ImportElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
 from ccoding.sync.differ import Conflict, SyncDiff, compute_diff
@@ -94,6 +96,7 @@ def _qualified_name(source_path: Path, class_name: str, source_root: Path) -> st
 def _element_to_class_content(
     elem: ClassElement,
     promoted_methods: set[str] | None = None,
+    promoted_fields: set[str] | None = None,
 ) -> ClassContent:
     """Convert a parsed ClassElement into a ClassContent for canvas rendering.
 
@@ -101,6 +104,9 @@ def _element_to_class_content(
         elem: The parsed class element.
         promoted_methods: Optional set of method names that have been promoted to
             detail nodes. When a method name is in this set, its MethodEntry will
+            have ``has_detail=True``, which causes the ``●`` marker to appear.
+        promoted_fields: Optional set of field names that have been promoted to
+            detail nodes. When a field name is in this set, its FieldEntry will
             have ``has_detail=True``, which causes the ``●`` marker to appear.
     """
     # Responsibility from docstring
@@ -113,6 +119,7 @@ def _element_to_class_content(
         FieldEntry(
             name=f.name,
             type=python_to_canvas(f.type_annotation) if f.type_annotation else "Any",
+            has_detail=promoted_fields is not None and f.name in promoted_fields,
         )
         for f in elem.fields
     ]
@@ -247,6 +254,52 @@ def _method_to_detail_node(
             kind="method",
             language=language,
             qualified_name=method_qname,
+            status="accepted",
+            layout_pending=True,
+        ),
+    )
+
+
+def _is_significant_field(field_elem: FieldElement) -> bool:
+    """Return True if the field has significant design documentation."""
+    return bool(
+        field_elem.comment_sections.get("responsibility", "").strip()
+        or field_elem.comment_sections.get("constraints", "").strip()
+    )
+
+
+def _field_to_detail_node(
+    field_elem: FieldElement,
+    class_qname: str,
+    x: int,
+    y: int,
+    language: str,
+) -> Node:
+    """Create a canvas Node for a significant field detail."""
+    field_qname = f"{class_qname}.{field_elem.name}"
+
+    content = FieldContent(
+        name=f"{class_qname.rsplit('.', 1)[-1]}.{field_elem.name}",
+        responsibility=field_elem.comment_sections.get("responsibility", "").strip(),
+        type=python_to_canvas(field_elem.type_annotation) if field_elem.type_annotation else "Any",
+        constraints=field_elem.comment_sections.get("constraints", "").strip(),
+        default=field_elem.default_value or "",
+    )
+
+    text = render_field_node(content)
+
+    return Node(
+        id=_new_id(),
+        type="text",
+        x=x,
+        y=y,
+        width=_NODE_WIDTH,
+        height=_NODE_HEIGHT,
+        text=text,
+        ccoding=CcodingMetadata(
+            kind="field",
+            language=language,
+            qualified_name=field_qname,
             status="accepted",
             layout_pending=True,
         ),
@@ -424,7 +477,15 @@ def import_codebase(
         significant_methods = [m for m in elem.methods if _is_significant_method(m)]
         promoted_methods: set[str] = {m.name for m in significant_methods}
 
-        content = _element_to_class_content(elem, promoted_methods if promoted_methods else None)
+        # Determine which fields are significant enough to promote
+        significant_fields = [f for f in elem.fields if _is_significant_field(f)]
+        promoted_fields: set[str] = {f.name for f in significant_fields}
+
+        content = _element_to_class_content(
+            elem,
+            promoted_methods if promoted_methods else None,
+            promoted_fields if promoted_fields else None,
+        )
         text = render_class_node(content)
 
         source_rel = _source_rel(elem.source_path, project_root)
@@ -465,6 +526,26 @@ def import_codebase(
                 from_node=node_id,
                 to_node=detail_node.id,
                 label=method.name,
+                ccoding=EdgeMetadata(relation="detail", status="accepted"),
+            )
+            canvas.edges.append(detail_edge)
+
+        # Create detail nodes for significant fields
+        detail_y_offset = len(significant_methods) * (_NODE_HEIGHT + 20)
+        for field_idx, field_elem in enumerate(significant_fields):
+            detail_node = _field_to_detail_node(
+                field_elem=field_elem,
+                class_qname=qname,
+                x=x + _NODE_WIDTH + _GRID_SPACING_X,
+                y=y + detail_y_offset + field_idx * (_NODE_HEIGHT + 20),
+                language=language,
+            )
+            canvas.nodes.append(detail_node)
+            detail_edge = Edge(
+                id=_edge_id(),
+                from_node=node_id,
+                to_node=detail_node.id,
+                label=field_elem.name,
                 ccoding=EdgeMetadata(relation="detail", status="accepted"),
             )
             canvas.edges.append(detail_edge)
@@ -633,7 +714,15 @@ def sync(
         significant_methods = [m for m in elem.methods if _is_significant_method(m)]
         promoted_methods_set: set[str] = {m.name for m in significant_methods}
 
-        content = _element_to_class_content(elem, promoted_methods_set if promoted_methods_set else None)
+        # Determine which fields are significant enough to promote
+        significant_fields = [f for f in elem.fields if _is_significant_field(f)]
+        promoted_fields_set: set[str] = {f.name for f in significant_fields}
+
+        content = _element_to_class_content(
+            elem,
+            promoted_methods_set if promoted_methods_set else None,
+            promoted_fields_set if promoted_fields_set else None,
+        )
         text = render_class_node(content)
         source_rel = _source_rel(elem.source_path, project_root)
 
@@ -672,6 +761,26 @@ def sync(
                 from_node=node_id,
                 to_node=detail_node.id,
                 label=method.name,
+                ccoding=EdgeMetadata(relation="detail", status="accepted"),
+            )
+            canvas.edges.append(detail_edge)
+
+        # Create detail nodes for significant fields
+        detail_y_offset = len(significant_methods) * (_NODE_HEIGHT + 20)
+        for field_idx, field_elem in enumerate(significant_fields):
+            detail_node = _field_to_detail_node(
+                field_elem=field_elem,
+                class_qname=qname,
+                x=x + _NODE_WIDTH + _GRID_SPACING_X,
+                y=y + detail_y_offset + field_idx * (_NODE_HEIGHT + 20),
+                language=config.language,
+            )
+            canvas.nodes.append(detail_node)
+            detail_edge = Edge(
+                id=_edge_id(),
+                from_node=node_id,
+                to_node=detail_node.id,
+                label=field_elem.name,
                 ccoding=EdgeMetadata(relation="detail", status="accepted"),
             )
             canvas.edges.append(detail_edge)
@@ -718,14 +827,22 @@ def sync(
             significant_methods = [m for m in elem.methods if _is_significant_method(m)]
             promoted_methods_set: set[str] = {m.name for m in significant_methods}
 
-            content = _element_to_class_content(elem, promoted_methods_set if promoted_methods_set else None)
+            # Determine which fields are significant enough to promote
+            significant_fields = [f for f in elem.fields if _is_significant_field(f)]
+            promoted_fields_set: set[str] = {f.name for f in significant_fields}
+
+            content = _element_to_class_content(
+                elem,
+                promoted_methods_set if promoted_methods_set else None,
+                promoted_fields_set if promoted_fields_set else None,
+            )
             text = render_class_node(content)
             node.text = text
             state.elements[qname].canvas_hash = content_hash(text)
             state.elements[qname].code_hash = code_hashes[qname]
             result.code_to_canvas.append(qname)
 
-            # Build a map of existing detail nodes for this class (by method name)
+            # Build a map of existing detail nodes for this class (by member name)
             # so we can update them in place or create new ones.
             existing_detail_nodes: dict[str, Node] = {}
             for edge in canvas.edges:
@@ -738,8 +855,8 @@ def sync(
                         (n for n in canvas.nodes if n.id == edge.to_node), None
                     )
                     if target and target.ccoding:
-                        method_name = (target.ccoding.qualified_name or "").rsplit(".", 1)[-1]
-                        existing_detail_nodes[method_name] = target
+                        member_name = (target.ccoding.qualified_name or "").rsplit(".", 1)[-1]
+                        existing_detail_nodes[member_name] = target
 
             for method_idx, method in enumerate(significant_methods):
                 if method.name in existing_detail_nodes:
@@ -768,6 +885,39 @@ def sync(
                         from_node=node.id,
                         to_node=detail_node.id,
                         label=method.name,
+                        ccoding=EdgeMetadata(relation="detail", status="accepted"),
+                    )
+                    canvas.edges.append(detail_edge)
+
+            # Handle field detail nodes
+            detail_y_offset = len(significant_methods) * (_NODE_HEIGHT + 20)
+            for field_idx, field_elem in enumerate(significant_fields):
+                if field_elem.name in existing_detail_nodes:
+                    # Update the existing detail node text
+                    detail_node = existing_detail_nodes[field_elem.name]
+                    updated = _field_to_detail_node(
+                        field_elem=field_elem,
+                        class_qname=qname,
+                        x=detail_node.x,
+                        y=detail_node.y,
+                        language=config.language,
+                    )
+                    detail_node.text = updated.text
+                else:
+                    # Create a new detail node and edge
+                    detail_node = _field_to_detail_node(
+                        field_elem=field_elem,
+                        class_qname=qname,
+                        x=node.x + _NODE_WIDTH + _GRID_SPACING_X,
+                        y=node.y + detail_y_offset + field_idx * (_NODE_HEIGHT + 20),
+                        language=config.language,
+                    )
+                    canvas.nodes.append(detail_node)
+                    detail_edge = Edge(
+                        id=_edge_id(),
+                        from_node=node.id,
+                        to_node=detail_node.id,
+                        label=field_elem.name,
                         ccoding=EdgeMetadata(relation="detail", status="accepted"),
                     )
                     canvas.edges.append(detail_edge)
