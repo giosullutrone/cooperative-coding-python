@@ -584,10 +584,10 @@ def sync(
             resolution = resolve_conflict(conflict, strategy)
             if resolution == ConflictResolution.USE_CANVAS:
                 # Treat as canvas-modified: regenerate code from canvas
-                diff.canvas_modified.append(conflict.element_name)
+                diff.canvas_modified.append(conflict.qualified_name)
             elif resolution == ConflictResolution.USE_CODE:
                 # Treat as code-modified: update canvas from code
-                diff.code_modified.append(conflict.element_name)
+                diff.code_modified.append(conflict.qualified_name)
             else:
                 # Manual — surface as unresolved conflict
                 result.conflicts.append(conflict)
