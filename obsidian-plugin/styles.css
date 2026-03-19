@@ -1,102 +1,220 @@
 /* styles.css — CooperativeCoding Obsidian Plugin
  *
- * Minimal overrides on top of Obsidian's native canvas styling.
- * Accepted nodes look exactly like normal canvas nodes.
- * Only proposed/rejected/stale get visual treatment.
+ * All styling via data-attribute selectors set by canvas-patcher.
+ * No DOM injection — badges/banners use CSS pseudo-elements.
  * Uses Obsidian CSS variables for theming compatibility.
  */
 
 /* ============================================
-   Ghost (proposed) nodes — the key distinction
+   Base transitions for smooth state changes
    ============================================ */
 
-.ccoding-ghost > .canvas-node-container {
+.canvas-node[data-ccoding-kind] {
+  transition: opacity 0.2s ease;
+}
+
+.canvas-node[data-ccoding-kind] > .canvas-node-container {
+  transition: border-style 0.2s ease, border-color 0.2s ease, box-shadow 0.3s ease;
+}
+
+/* ============================================
+   Kind-based borders
+   ============================================ */
+
+.canvas-node[data-ccoding-kind="class"] > .canvas-node-container {
+  border-color: #8b5cf6;
+}
+
+.canvas-node[data-ccoding-kind="interface"] > .canvas-node-container {
+  border-color: #8b5cf6;
+  border-style: dashed;
+}
+
+.canvas-node[data-ccoding-kind="method"] > .canvas-node-container {
+  border-color: #f97316;
+  border-radius: 12px;
+}
+
+.canvas-node[data-ccoding-kind="field"] > .canvas-node-container {
+  border-color: #3b82f6;
+  border-radius: 12px;
+}
+
+.canvas-node[data-ccoding-kind="package"] > .canvas-node-container {
+  border-color: #22c55e;
+}
+
+.canvas-node[data-ccoding-kind="module"] > .canvas-node-container {
+  border-color: #22c55e;
+}
+
+/* ============================================
+   Status-based treatment
+   ============================================ */
+
+/* Proposed (ghost) nodes */
+.canvas-node[data-ccoding-status="proposed"] > .canvas-node-container {
   border-style: dashed !important;
 }
 
-.ccoding-ghost {
+.canvas-node[data-ccoding-status="proposed"] {
   opacity: 0.7;
 }
 
-/* ============================================
-   Rejected and stale nodes
-   ============================================ */
-
-.ccoding-rejected {
+/* Rejected nodes */
+.canvas-node[data-ccoding-status="rejected"] {
   opacity: 0.3;
 }
 
-.ccoding-rejected-hidden {
+.canvas-node[data-ccoding-rejected-hidden] {
   display: none !important;
 }
 
-.ccoding-stale {
+/* Stale nodes */
+.canvas-node[data-ccoding-status="stale"] > .canvas-node-container {
+  border-color: #ca8a04;
+}
+
+.canvas-node[data-ccoding-status="stale"] {
   opacity: 0.5;
 }
 
 /* ============================================
-   Ghost edges
+   Pseudo-element badges and banners
    ============================================ */
 
-.ccoding-edge.ccoding-ghost path {
+/* Shared badge/banner styling */
+.canvas-node[data-ccoding-stereotype] > .canvas-node-container::before,
+.canvas-node[data-ccoding-stereotype] > .canvas-node-container::after,
+.canvas-node[data-ccoding-status="proposed"] > .canvas-node-container::before,
+.canvas-node[data-ccoding-status="stale"] > .canvas-node-container::before {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: var(--font-smallest);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  box-sizing: border-box;
+}
+
+/* Stereotype badge — default position: ::before (when no status banner) */
+.canvas-node[data-ccoding-status="accepted"][data-ccoding-stereotype] > .canvas-node-container::before,
+.canvas-node:not([data-ccoding-status])[data-ccoding-stereotype] > .canvas-node-container::before {
+  content: "\00AB" attr(data-ccoding-stereotype) "\00BB";
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+/* Stereotype badge — fallback position: ::after (when ::before is taken by status banner) */
+.canvas-node[data-ccoding-status="proposed"][data-ccoding-stereotype] > .canvas-node-container::after,
+.canvas-node[data-ccoding-status="stale"][data-ccoding-stereotype] > .canvas-node-container::after {
+  content: "\00AB" attr(data-ccoding-stereotype) "\00BB";
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+/* PROPOSED banner */
+.canvas-node[data-ccoding-status="proposed"] > .canvas-node-container::before {
+  content: "PROPOSED";
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  opacity: 0.85;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+}
+
+/* STALE banner */
+.canvas-node[data-ccoding-status="stale"] > .canvas-node-container::before {
+  content: "STALE";
+  color: var(--text-on-accent);
+  background: var(--text-warning);
+  letter-spacing: 1px;
+  padding: 4px 8px;
+}
+
+/* ============================================
+   Edge styling by relation type
+   ============================================ */
+
+.canvas-edge[data-ccoding-relation="inherits"] path {
+  stroke: #e2e8f0;
+  stroke-width: 2px;
+}
+
+.canvas-edge[data-ccoding-relation="implements"] path {
+  stroke: #e2e8f0;
+  stroke-width: 2px;
+  stroke-dasharray: 6 4;
+}
+
+.canvas-edge[data-ccoding-relation="composes"] path {
+  stroke: #8b5cf6;
+  stroke-width: 2px;
+}
+
+.canvas-edge[data-ccoding-relation="depends"] path {
+  stroke: #64748b;
+  stroke-width: 1px;
+  stroke-dasharray: 6 4;
+}
+
+.canvas-edge[data-ccoding-relation="calls"] path {
+  stroke: #f97316;
+  stroke-width: 1px;
+  stroke-dasharray: 2 3;
+}
+
+.canvas-edge[data-ccoding-relation="detail"] path {
+  stroke: #3b82f6;
+  stroke-width: 1px;
+}
+
+.canvas-edge[data-ccoding-relation="context"] path {
+  stroke: #475569;
+  stroke-width: 1px;
+}
+
+/* Ghost edges */
+.canvas-edge[data-ccoding-status="proposed"] {
+  opacity: 0.7;
+}
+
+.canvas-edge[data-ccoding-status="proposed"] path {
   stroke-dasharray: 8 4 !important;
-  opacity: 0.5;
 }
 
 /* ============================================
    Context node highlighting (on selection)
    ============================================ */
 
-.ccoding-context-highlight > .canvas-node-container {
+.canvas-node[data-ccoding-context-highlight] > .canvas-node-container {
   box-shadow: 0 0 8px 2px var(--interactive-accent) !important;
 }
 
+.canvas-edge[data-ccoding-context-highlight] path {
+  stroke: var(--interactive-accent) !important;
+  stroke-width: 2px !important;
+}
+
 /* ============================================
-   DOM patch elements — banners, badges, footer
-   Uses Obsidian CSS variables for theme compat.
+   Status bar
    ============================================ */
 
-.ccoding-stereotype-badge {
-  font-size: var(--font-smallest);
-  font-weight: 600;
-  text-align: center;
-  padding: 2px 8px;
-  letter-spacing: 0.5px;
-  color: var(--text-on-accent);
-  background: var(--interactive-accent);
+.ccoding-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.ccoding-proposed-banner {
-  font-size: var(--font-smallest);
-  font-weight: 600;
-  text-align: center;
-  padding: 4px 8px;
-  letter-spacing: 1px;
-  color: var(--text-on-accent);
-  background: var(--interactive-accent);
-  opacity: 0.85;
+.ccoding-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-error);
 }
 
-.ccoding-stale-banner {
-  font-size: var(--font-smallest);
-  font-weight: 600;
-  text-align: center;
-  padding: 4px 8px;
-  letter-spacing: 1px;
-  color: var(--text-on-accent);
-  background: var(--text-warning);
-}
-
-.ccoding-rationale-footer {
-  font-size: var(--font-smallest);
-  font-style: italic;
-  padding: 8px 12px;
-  border-top: 1px dashed var(--background-modifier-border);
-  color: var(--text-muted);
-}
-
-.ccoding-rationale-footer .ccoding-rationale-prefix {
-  color: var(--text-accent);
-  font-weight: 600;
-  font-style: normal;
+.ccoding-status-dot.is-connected {
+  background: var(--text-success, #4ade80);
 }
