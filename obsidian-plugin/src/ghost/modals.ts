@@ -2,9 +2,11 @@
 import { Modal, Setting, App, Notice } from "obsidian";
 import type { CcodingBridge, ProposeOptions, ProposeEdgeOptions } from "../bridge/cli";
 
-const NODE_KINDS = ["class", "interface", "module", "package"];
-const STEREOTYPES = ["", "protocol", "abstract", "dataclass", "enum"];
-const EDGE_RELATIONS = ["inherits", "implements", "composes", "depends", "calls", "detail", "context"];
+export const NODE_KINDS = ["class", "interface", "module", "package"];
+export const CHILD_KINDS = ["field", "method"];
+export const ALL_KINDS = [...NODE_KINDS, ...CHILD_KINDS];
+export const STEREOTYPES = ["", "protocol", "abstract", "dataclass", "enum"];
+export const EDGE_RELATIONS = ["inherits", "implements", "composes", "depends", "calls", "detail", "context"];
 
 /**
  * Modal for proposing a new ghost node.
@@ -277,6 +279,292 @@ export class ElevateModal extends Modal {
       kind: this.kind,
       name: this.nodeName.trim(),
       stereotype: this.stereotype || undefined,
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+// ─── Direct Canvas Manipulation Modals (no CLI needed) ─────────
+
+export interface AddChildResult {
+  kind: "field" | "method";
+  name: string;
+  typeName?: string;
+  params?: string;
+  returnType?: string;
+  description?: string;
+}
+
+/**
+ * Modal for adding a field or method as a child of a class/interface.
+ * Works without the CLI — directly manipulates canvas data.
+ */
+export class AddChildModal extends Modal {
+  private kind: "field" | "method";
+  private name = "";
+  private typeName = "";
+  private params = "";
+  private returnType = "";
+  private description = "";
+
+  constructor(
+    app: App,
+    private parentLabel: string,
+    defaultKind: "field" | "method",
+    private onDone: (result: AddChildResult) => void,
+  ) {
+    super(app);
+    this.kind = defaultKind;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("h3", {
+      text: `Add ${this.kind} to "${this.parentLabel}"`,
+    });
+
+    new Setting(contentEl)
+      .setName("Kind")
+      .addDropdown((drop) => {
+        for (const k of ["field", "method"]) drop.addOption(k, k);
+        drop.setValue(this.kind);
+        drop.onChange((v) => { this.kind = v as "field" | "method"; });
+      });
+
+    new Setting(contentEl)
+      .setName("Name")
+      .setDesc(this.kind === "field" ? "Field name" : "Method name")
+      .addText((text) =>
+        text.setPlaceholder(this.kind === "field" ? "my_field" : "my_method()").onChange((v) => {
+          this.name = v;
+        }),
+      );
+
+    new Setting(contentEl)
+      .setName("Type / Parameters")
+      .setDesc("For fields: type annotation. For methods: parameter list")
+      .addText((text) =>
+        text.setPlaceholder("str | x: int, y: int").onChange((v) => {
+          if (this.kind === "field") this.typeName = v;
+          else this.params = v;
+        }),
+      );
+
+    new Setting(contentEl)
+      .setName("Return type")
+      .setDesc("For methods only")
+      .addText((text) =>
+        text.setPlaceholder("bool").onChange((v) => { this.returnType = v; }),
+      );
+
+    new Setting(contentEl)
+      .setName("Description")
+      .setDesc("Optional description or pseudocode")
+      .addTextArea((area) =>
+        area.setPlaceholder("...").onChange((v) => { this.description = v; }),
+      );
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Add").setCta().onClick(() => this.submit()),
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Cancel").onClick(() => this.close()),
+      );
+  }
+
+  private submit(): void {
+    if (!this.name.trim()) {
+      new Notice("Name is required.");
+      return;
+    }
+    this.close();
+    this.onDone({
+      kind: this.kind,
+      name: this.name.trim(),
+      typeName: this.typeName.trim() || undefined,
+      params: this.params.trim() || undefined,
+      returnType: this.returnType.trim() || undefined,
+      description: this.description.trim() || undefined,
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+export interface CreateElementResult {
+  kind: string;
+  name: string;
+  stereotype?: string;
+  description?: string;
+}
+
+/**
+ * Modal for creating a new ccoding element directly on the canvas.
+ * Works without the CLI — directly manipulates canvas data.
+ */
+export class CreateElementModal extends Modal {
+  private kind = "class";
+  private name = "";
+  private stereotype = "";
+  private description = "";
+
+  constructor(
+    app: App,
+    defaultKind?: string,
+    private onDone?: (result: CreateElementResult) => void,
+  ) {
+    super(app);
+    if (defaultKind) this.kind = defaultKind;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: "Create new element" });
+
+    new Setting(contentEl)
+      .setName("Name")
+      .setDesc("Element name")
+      .addText((text) =>
+        text.setPlaceholder("MyClass").onChange((v) => { this.name = v; }),
+      );
+
+    new Setting(contentEl)
+      .setName("Kind")
+      .addDropdown((drop) => {
+        for (const k of NODE_KINDS) drop.addOption(k, k);
+        drop.setValue(this.kind);
+        drop.onChange((v) => { this.kind = v; });
+      });
+
+    new Setting(contentEl)
+      .setName("Stereotype")
+      .setDesc("Optional: protocol, abstract, dataclass, enum")
+      .addDropdown((drop) => {
+        drop.addOption("", "(none)");
+        for (const s of STEREOTYPES.filter(Boolean)) drop.addOption(s, s);
+        drop.onChange((v) => { this.stereotype = v; });
+      });
+
+    new Setting(contentEl)
+      .setName("Description")
+      .setDesc("Optional description")
+      .addTextArea((area) =>
+        area.setPlaceholder("What does this element do?").onChange((v) => {
+          this.description = v;
+        }),
+      );
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Create").setCta().onClick(() => this.submit()),
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Cancel").onClick(() => this.close()),
+      );
+  }
+
+  private submit(): void {
+    if (!this.name.trim()) {
+      new Notice("Name is required.");
+      return;
+    }
+    this.close();
+    this.onDone?.({
+      kind: this.kind,
+      name: this.name.trim(),
+      stereotype: this.stereotype || undefined,
+      description: this.description.trim() || undefined,
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+export interface AddRelationResult {
+  targetId: string;
+  relation: string;
+  label?: string;
+}
+
+/**
+ * Modal for adding a relation (edge) between two ccoding nodes.
+ * Works without the CLI — directly manipulates canvas data.
+ */
+export class AddRelationModal extends Modal {
+  private targetId = "";
+  private relation = "depends";
+  private label = "";
+
+  constructor(
+    app: App,
+    private sourceLabel: string,
+    private sourceId: string,
+    private availableTargets: Array<{ id: string; label: string }>,
+    private onDone: (result: AddRelationResult) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("h3", {
+      text: `Add relation from "${this.sourceLabel}"`,
+    });
+
+    new Setting(contentEl)
+      .setName("Target")
+      .addDropdown((drop) => {
+        drop.addOption("", "Select target...");
+        for (const t of this.availableTargets) {
+          if (t.id !== this.sourceId) {
+            drop.addOption(t.id, t.label);
+          }
+        }
+        drop.onChange((v) => { this.targetId = v; });
+      });
+
+    new Setting(contentEl)
+      .setName("Relation")
+      .addDropdown((drop) => {
+        for (const r of EDGE_RELATIONS) drop.addOption(r, r);
+        drop.setValue(this.relation);
+        drop.onChange((v) => { this.relation = v; });
+      });
+
+    new Setting(contentEl)
+      .setName("Label")
+      .setDesc("Optional edge label")
+      .addText((text) =>
+        text.setPlaceholder("").onChange((v) => { this.label = v; }),
+      );
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Add Relation").setCta().onClick(() => this.submit()),
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Cancel").onClick(() => this.close()),
+      );
+  }
+
+  private submit(): void {
+    if (!this.targetId) {
+      new Notice("Please select a target node.");
+      return;
+    }
+    this.close();
+    this.onDone({
+      targetId: this.targetId,
+      relation: this.relation,
+      label: this.label.trim() || undefined,
     });
   }
 

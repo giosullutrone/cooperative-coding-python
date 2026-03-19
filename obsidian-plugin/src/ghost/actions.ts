@@ -99,10 +99,3 @@ export async function checkStatus(
   }
 }
 
-export function showRationale(rationale: string | null): void {
-  if (rationale) {
-    new Notice(`Agent rationale: ${rationale}`, 10000);
-  } else {
-    new Notice("No rationale provided.", 3000);
-  }
-}

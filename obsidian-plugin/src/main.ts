@@ -14,10 +14,26 @@ import {
   rejectAll,
   syncCanvas,
   checkStatus,
-  showRationale,
 } from "./ghost/actions";
-import { ProposeModal, ProposeEdgeModal, ElevateModal } from "./ghost/modals";
+import {
+  ProposeModal,
+  ProposeEdgeModal,
+  ElevateModal,
+  AddChildModal,
+  CreateElementModal,
+  AddRelationModal,
+  type AddChildResult,
+  type CreateElementResult,
+  type AddRelationResult,
+} from "./ghost/modals";
 import { layoutCanvas } from "./layout/hierarchical";
+import {
+  addNodeToCanvasData,
+  addEdgeToCanvasData,
+  computeChildPosition,
+  defaultDimensions,
+  buildNodeText,
+} from "./canvas-helpers";
 
 export default class CooperativeCodingPlugin extends Plugin {
   settings: PluginSettings = DEFAULT_SETTINGS;
@@ -179,6 +195,25 @@ export default class CooperativeCodingPlugin extends Plugin {
       name: "Layout all nodes",
       callback: () => this.runLayout(true),
     });
+
+    // Direct canvas commands (no CLI needed)
+    this.addCommand({
+      id: "cooperative-coding:add-class",
+      name: "Add class",
+      callback: () => this.openCreateElementModal("class"),
+    });
+
+    this.addCommand({
+      id: "cooperative-coding:add-interface",
+      name: "Add interface",
+      callback: () => this.openCreateElementModal("interface"),
+    });
+
+    this.addCommand({
+      id: "cooperative-coding:add-package",
+      name: "Add package",
+      callback: () => this.openCreateElementModal("package"),
+    });
   }
 
   // ─── Canvas Context Menus ──────────────────────────────────
@@ -189,36 +224,56 @@ export default class CooperativeCodingPlugin extends Plugin {
       this.app.workspace.on("canvas:node-menu" as any, (menu: any, node: any) => {
         const meta = parseCcodingMetadata(node?.unknownData?.ccoding);
 
-        if (meta && this.cliAvailable) {
-          // ccoding-tracked node — show status-specific actions
-          if (meta.status === "proposed") {
+        if (meta) {
+          // CLI-backed actions (accept/reject/reconsider)
+          if (this.cliAvailable) {
+            if (meta.status === "proposed") {
+              menu.addSeparator();
+              menu.addItem((item: any) =>
+                item.setTitle("Accept proposal").setIcon("check")
+                  .onClick(() => this.runAction(() => acceptElement(this.bridge, node.id))),
+              );
+              menu.addItem((item: any) =>
+                item.setTitle("Reject proposal").setIcon("x")
+                  .onClick(() => this.runAction(() => rejectElement(this.bridge, node.id))),
+              );
+            } else if (meta.status === "rejected") {
+              menu.addSeparator();
+              menu.addItem((item: any) =>
+                item.setTitle("Reconsider").setIcon("rotate-ccw")
+                  .onClick(() => this.runAction(() => reconsiderElement(this.bridge, node.id))),
+              );
+            }
+          }
+
+          // Direct canvas actions (no CLI needed)
+          const isContainer = meta.kind === "class" || meta.kind === "interface";
+          if (isContainer) {
             menu.addSeparator();
             menu.addItem((item: any) =>
-              item.setTitle("Accept proposal").setIcon("check")
-                .onClick(() => this.runAction(() => acceptElement(this.bridge, node.id))),
+              item.setTitle("Add field...").setIcon("text-cursor-input")
+                .onClick(() => this.openAddChildModal(node, "field")),
             );
             menu.addItem((item: any) =>
-              item.setTitle("Reject proposal").setIcon("x")
-                .onClick(() => this.runAction(() => rejectElement(this.bridge, node.id))),
-            );
-            menu.addItem((item: any) =>
-              item.setTitle("Show rationale").setIcon("info")
-                .onClick(() => showRationale(meta.proposalRationale ?? null)),
-            );
-          } else if (meta.status === "rejected") {
-            menu.addSeparator();
-            menu.addItem((item: any) =>
-              item.setTitle("Reconsider").setIcon("rotate-ccw")
-                .onClick(() => this.runAction(() => reconsiderElement(this.bridge, node.id))),
+              item.setTitle("Add method...").setIcon("function-square")
+                .onClick(() => this.openAddChildModal(node, "method")),
             );
           }
 
-          // Propose edge from this node (any tracked status)
+          // Add relation (direct, no CLI)
           menu.addItem((item: any) =>
-            item.setTitle("Propose edge from here...").setIcon("git-branch")
-              .onClick(() => this.openProposeEdgeModal(node)),
+            item.setTitle("Add relation...").setIcon("git-branch")
+              .onClick(() => this.openAddRelationModal(node)),
           );
-        } else if (!meta && this.cliAvailable) {
+
+          // CLI-backed propose edge
+          if (this.cliAvailable) {
+            menu.addItem((item: any) =>
+              item.setTitle("Propose edge (CLI)...").setIcon("git-branch")
+                .onClick(() => this.openProposeEdgeModal(node)),
+            );
+          }
+        } else {
           // Plain canvas node — offer to elevate
           menu.addSeparator();
           menu.addItem((item: any) =>
@@ -259,21 +314,39 @@ export default class CooperativeCodingPlugin extends Plugin {
     // Canvas background context menu
     this.registerEvent(
       this.app.workspace.on("canvas:menu" as any, (menu: any) => {
+        // Direct element creation (no CLI needed)
+        menu.addSeparator();
+        menu.addItem((item: any) =>
+          item.setTitle("Add class...").setIcon("box")
+            .onClick(() => this.openCreateElementModal("class")),
+        );
+        menu.addItem((item: any) =>
+          item.setTitle("Add interface...").setIcon("layout-template")
+            .onClick(() => this.openCreateElementModal("interface")),
+        );
+        menu.addItem((item: any) =>
+          item.setTitle("Add package...").setIcon("package")
+            .onClick(() => this.openCreateElementModal("package")),
+        );
+
+        // CLI-backed proposals
         if (this.cliAvailable) {
           menu.addSeparator();
           menu.addItem((item: any) =>
-            item.setTitle("Propose new class").setIcon("plus-circle")
+            item.setTitle("Propose new class (CLI)...").setIcon("plus-circle")
               .onClick(() => {
                 new ProposeModal(this.app, this.bridge, () => this.refreshCanvas(), "class").open();
               }),
           );
           menu.addItem((item: any) =>
-            item.setTitle("Propose new interface").setIcon("plus-circle")
+            item.setTitle("Propose new interface (CLI)...").setIcon("plus-circle")
               .onClick(() => {
                 new ProposeModal(this.app, this.bridge, () => this.refreshCanvas(), "interface").open();
               }),
           );
         }
+
+        menu.addSeparator();
         menu.addItem((item: any) =>
           item.setTitle("Layout all nodes").setIcon("layout-grid")
             .onClick(() => this.runLayout(true)),
@@ -350,6 +423,164 @@ export default class CooperativeCodingPlugin extends Plugin {
     canvas.requestSave?.();
 
     new Notice(`Elevated "${meta.name}" to ccoding ${meta.kind}`, 3000);
+    this.refreshCanvas();
+  }
+
+  // ─── Direct Canvas Element Creation ────────────────────────
+
+  private getNodeLabel(node: any): string {
+    const meta = parseCcodingMetadata(node?.unknownData?.ccoding);
+    return meta?.qualifiedName
+      || node?.unknownData?.ccoding?.name
+      || node?.text?.split("\n")[0]?.replace(/^#+\s*/, "").trim()
+      || node?.id;
+  }
+
+  private getCcodingTargets(): Array<{ id: string; label: string }> {
+    const canvas = this.currentCanvas;
+    if (!canvas?.nodes) return [];
+    const targets: Array<{ id: string; label: string }> = [];
+    for (const [, n] of canvas.nodes) {
+      const meta = parseCcodingMetadata(n.unknownData?.ccoding);
+      if (!meta) continue;
+      targets.push({ id: n.id, label: this.getNodeLabel(n) });
+    }
+    return targets;
+  }
+
+  private openAddChildModal(parentNode: any, kind: "field" | "method"): void {
+    const parentLabel = this.getNodeLabel(parentNode);
+    const parentMeta = parseCcodingMetadata(parentNode?.unknownData?.ccoding);
+    const parentQualifiedName = parentMeta?.qualifiedName || parentLabel;
+
+    new AddChildModal(this.app, parentLabel, kind, (result: AddChildResult) => {
+      this.addChildToNode(parentNode.id, parentQualifiedName, result);
+    }).open();
+  }
+
+  private addChildToNode(
+    parentId: string,
+    parentQualifiedName: string,
+    child: AddChildResult,
+  ): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) return;
+    const data = canvas.getData?.();
+    if (!data) return;
+
+    // Build node text
+    let text: string;
+    if (child.kind === "field") {
+      const typePart = child.typeName ? `\`${child.typeName}\`` : "";
+      const descParts = [typePart, child.description].filter(Boolean).join(" — ");
+      text = buildNodeText(child.kind, child.name, descParts || undefined);
+    } else {
+      // method
+      const sigParts: string[] = [];
+      if (child.params) sigParts.push(`**Params:** \`${child.params}\``);
+      if (child.returnType) sigParts.push(`**Returns:** \`${child.returnType}\``);
+      if (child.description) sigParts.push(`\n${child.description}`);
+      const body = sigParts.join("\n") || undefined;
+      text = buildNodeText(child.kind, `${child.name}()`, body);
+    }
+
+    const dims = defaultDimensions(child.kind);
+    const pos = computeChildPosition(data, parentId, dims.width, dims.height);
+
+    const qualifiedName = `${parentQualifiedName}.${child.name}`;
+
+    const nodeId = addNodeToCanvasData(data, {
+      kind: child.kind,
+      qualifiedName,
+      status: "accepted",
+      text,
+      x: pos.x,
+      y: pos.y,
+      width: dims.width,
+      height: dims.height,
+    });
+
+    addEdgeToCanvasData(data, {
+      fromNode: parentId,
+      toNode: nodeId,
+      relation: "detail",
+      status: "accepted",
+      fromSide: "right",
+      toSide: "left",
+    });
+
+    canvas.setData?.(data);
+    canvas.requestSave?.();
+
+    new Notice(`Added ${child.kind}: ${child.name}`, 3000);
+    this.refreshCanvas();
+  }
+
+  private openCreateElementModal(defaultKind?: string): void {
+    new CreateElementModal(this.app, defaultKind, (result: CreateElementResult) => {
+      this.createElementOnCanvas(result);
+    }).open();
+  }
+
+  private createElementOnCanvas(element: CreateElementResult): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) return;
+    const data = canvas.getData?.();
+    if (!data) return;
+
+    const text = buildNodeText(element.kind, element.name, element.description);
+    const dims = defaultDimensions(element.kind);
+
+    // Place near the center of the viewport, offset by a random small amount
+    // to avoid stacking on the same spot
+    const offset = Math.floor(Math.random() * 200) - 100;
+
+    addNodeToCanvasData(data, {
+      kind: element.kind,
+      qualifiedName: element.name,
+      status: "accepted",
+      stereotype: element.stereotype,
+      text,
+      x: offset,
+      y: offset,
+      width: dims.width,
+      height: dims.height,
+    });
+
+    canvas.setData?.(data);
+    canvas.requestSave?.();
+
+    new Notice(`Created ${element.kind}: ${element.name}`, 3000);
+    this.refreshCanvas();
+  }
+
+  private openAddRelationModal(sourceNode: any): void {
+    const sourceLabel = this.getNodeLabel(sourceNode);
+    const targets = this.getCcodingTargets();
+
+    new AddRelationModal(this.app, sourceLabel, sourceNode.id, targets, (result: AddRelationResult) => {
+      this.addRelationToCanvas(sourceNode.id, result);
+    }).open();
+  }
+
+  private addRelationToCanvas(sourceId: string, relation: AddRelationResult): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) return;
+    const data = canvas.getData?.();
+    if (!data) return;
+
+    addEdgeToCanvasData(data, {
+      fromNode: sourceId,
+      toNode: relation.targetId,
+      relation: relation.relation,
+      status: "accepted",
+      label: relation.label,
+    });
+
+    canvas.setData?.(data);
+    canvas.requestSave?.();
+
+    new Notice(`Added ${relation.relation} relation`, 3000);
     this.refreshCanvas();
   }
 
