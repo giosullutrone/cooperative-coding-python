@@ -327,3 +327,142 @@ class TestSyncEdgeAwareCodeGeneration:
         assert "config: ParserConfig" in code, (
             f"Expected 'config: ParserConfig' field in generated code:\n{code}"
         )
+
+
+class TestEdgeCreationFromCode:
+    """Verify that composes and depends edges are created when importing or syncing code."""
+
+    def test_import_creates_composes_edges(self, tmp_project: Path):
+        """Typed field references to tracked classes produce composes edges on import."""
+        src_dir = tmp_project / "src"
+        canvas_path = tmp_project / "design.canvas"
+
+        # Write Config class
+        (src_dir / "config.py").write_text(
+            'class Config:\n'
+            '    """Configuration holder.\n\n'
+            '    Responsibility:\n'
+            '        Holds configuration values.\n'
+            '    """\n'
+            '    value: str\n'
+        )
+        # Write Parser class with a field typed as Config
+        (src_dir / "parser.py").write_text(
+            'class Parser:\n'
+            '    """Parses input.\n\n'
+            '    Responsibility:\n'
+            '        Parses things.\n'
+            '    """\n'
+            '    config: Config\n'
+        )
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        canvas = read_canvas(canvas_path)
+
+        composes_edges = [
+            e for e in canvas.edges
+            if e.ccoding and e.ccoding.relation == "composes"
+        ]
+        assert len(composes_edges) >= 1, (
+            f"Expected at least one composes edge, got: {canvas.edges}"
+        )
+        assert any("config" in (e.label or "") for e in composes_edges), (
+            f"Expected a composes edge with label containing 'config', got: {composes_edges}"
+        )
+
+    def test_import_creates_depends_edges(self, tmp_project: Path):
+        """Import statements referencing tracked classes produce depends edges on import."""
+        src_dir = tmp_project / "src"
+        canvas_path = tmp_project / "design.canvas"
+
+        # Write Config class
+        (src_dir / "config.py").write_text(
+            'class Config:\n'
+            '    """Configuration holder.\n\n'
+            '    Responsibility:\n'
+            '        Holds configuration values.\n'
+            '    """\n'
+            '    value: str\n'
+        )
+        # Write Parser class that imports Config (no typed field — pure import dependency)
+        (src_dir / "parser.py").write_text(
+            'from config import Config\n'
+            '\n'
+            'class Parser:\n'
+            '    """Parses input.\n\n'
+            '    Responsibility:\n'
+            '        Parses things.\n'
+            '    """\n'
+            '    pass\n'
+        )
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        canvas = read_canvas(canvas_path)
+
+        depends_edges = [
+            e for e in canvas.edges
+            if e.ccoding and e.ccoding.relation == "depends"
+        ]
+        assert len(depends_edges) >= 1, (
+            f"Expected at least one depends edge, got: {canvas.edges}"
+        )
+
+    def test_sync_code_added_creates_edges(self, tmp_project: Path):
+        """When sync detects a code-added class with a typed field, a composes edge is created."""
+        src_dir = tmp_project / "src"
+        canvas_path = tmp_project / "design.canvas"
+
+        # Pre-populate with Config class and import it
+        (src_dir / "config.py").write_text(
+            'class Config:\n'
+            '    """Configuration holder.\n\n'
+            '    Responsibility:\n'
+            '        Holds configuration values.\n'
+            '    """\n'
+            '    value: str\n'
+        )
+
+        import_codebase(
+            source_dir=src_dir,
+            canvas_path=canvas_path,
+            project_root=tmp_project,
+            language="python",
+        )
+
+        # Now add a Runner class that uses Config
+        (src_dir / "runner.py").write_text(
+            'class Runner:\n'
+            '    """Runs the application.\n\n'
+            '    Responsibility:\n'
+            '        Executes tasks.\n'
+            '    """\n'
+            '    config: Config\n'
+        )
+
+        # Sync — Runner is code_added, should trigger edge creation
+        sync(canvas_path=canvas_path, project_root=tmp_project)
+
+        canvas = read_canvas(canvas_path)
+
+        composes_edges = [
+            e for e in canvas.edges
+            if e.ccoding and e.ccoding.relation == "composes"
+        ]
+        assert len(composes_edges) >= 1, (
+            f"Expected at least one composes edge after sync, got: {canvas.edges}"
+        )
+        assert any("config" in (e.label or "") for e in composes_edges), (
+            f"Expected a composes edge with label containing 'config', got: {composes_edges}"
+        )

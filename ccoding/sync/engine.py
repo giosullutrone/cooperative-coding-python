@@ -6,6 +6,7 @@ keep the Obsidian canvas and the Python source tree in sync.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
@@ -27,7 +28,7 @@ from ccoding.canvas.model import (
 from ccoding.canvas.reader import read_canvas
 from ccoding.canvas.writer import write_canvas
 from ccoding.code.generator import generate_class, deprecate_class, EdgeInfo
-from ccoding.code.parser import PythonAstParser, ClassElement
+from ccoding.code.parser import PythonAstParser, ClassElement, ImportElement
 from ccoding.config import load_config
 from ccoding.sync.conflict import ConflictResolution, resolve_conflict
 from ccoding.sync.differ import Conflict, SyncDiff, compute_diff
@@ -201,6 +202,70 @@ def _collect_edge_info(canvas: "Canvas", node_id: str) -> list[EdgeInfo]:
 
 
 # ---------------------------------------------------------------------------
+# Relationship edge helpers
+# ---------------------------------------------------------------------------
+
+
+def _create_relationship_edges(
+    canvas: Canvas,
+    elem: ClassElement,
+    node_id: str,
+    name_to_node_id: dict[str, str],
+    all_elements: list[ClassElement],
+    import_elements: list[ImportElement] | None = None,
+) -> None:
+    """Create composes and depends edges from code analysis."""
+    # Composes: fields whose type matches a tracked class name
+    tracked_class_names = set(name_to_node_id.keys())
+    for f in elem.fields:
+        if not f.type_annotation:
+            continue
+        type_name = f.type_annotation.strip("'\"")
+        # Word-boundary matching to avoid false positives
+        for class_name in tracked_class_names:
+            if re.search(rf'\b{re.escape(class_name)}\b', type_name) and class_name != elem.name:
+                to_id = name_to_node_id[class_name]
+                # Don't create duplicate edges
+                existing = any(
+                    e for e in canvas.edges
+                    if e.ccoding and e.ccoding.relation == "composes"
+                    and e.from_node == node_id and e.to_node == to_id
+                )
+                if not existing:
+                    edge = Edge(
+                        id=_edge_id(),
+                        from_node=node_id,
+                        to_node=to_id,
+                        label=f.name,
+                        ccoding=EdgeMetadata(relation="composes", status="accepted"),
+                    )
+                    canvas.edges.append(edge)
+                break
+
+    # Depends: imports that reference tracked classes
+    if import_elements:
+        for imp in import_elements:
+            for name in imp.names:
+                simple_name = name.rsplit(".", 1)[-1] if "." in name else name
+                if simple_name in tracked_class_names and simple_name != elem.name:
+                    to_id = name_to_node_id[simple_name]
+                    existing = any(
+                        e for e in canvas.edges
+                        if e.ccoding and e.ccoding.relation == "depends"
+                        and e.from_node == node_id and e.to_node == to_id
+                    )
+                    if not existing:
+                        edge = Edge(
+                            id=_edge_id(),
+                            from_node=node_id,
+                            to_node=to_id,
+                            label=name,
+                            ccoding=EdgeMetadata(relation="depends", status="accepted"),
+                        )
+                        canvas.edges.append(edge)
+
+
+# ---------------------------------------------------------------------------
 # import_codebase
 # ---------------------------------------------------------------------------
 
@@ -298,6 +363,32 @@ def import_codebase(
                     ccoding=EdgeMetadata(relation=relation, status="accepted"),
                 )
                 canvas.edges.append(edge)
+
+    # Create composes / depends edges from field types and imports
+    # Group class elements by source file for per-file import lookup
+    files_seen: set[str] = set()
+    file_imports: dict[str, list[ImportElement]] = {}
+    for elem in class_elements:
+        if elem.source_path and elem.source_path not in files_seen:
+            files_seen.add(elem.source_path)
+            per_file = parser.parse_file(Path(elem.source_path))
+            file_imports[elem.source_path] = [
+                e for e in per_file if isinstance(e, ImportElement)
+            ]
+
+    for elem in class_elements:
+        from_id = name_to_node_id.get(elem.name)
+        if not from_id:
+            continue
+        imports = file_imports.get(elem.source_path or "", [])
+        _create_relationship_edges(
+            canvas=canvas,
+            elem=elem,
+            node_id=from_id,
+            name_to_node_id=name_to_node_id,
+            all_elements=class_elements,
+            import_elements=imports,
+        )
 
     write_canvas(canvas, canvas_path)
     save_sync_state(state, project_root)
@@ -425,6 +516,28 @@ def sync(
             source_path=source_rel,
         )
         result.code_to_canvas.append(qname)
+
+        # Build name_to_node_id from all current canvas nodes for edge creation
+        name_to_node_id: dict[str, str] = {}
+        for n in canvas.nodes:
+            if n.ccoding and n.ccoding.qualified_name:
+                simple = n.ccoding.qualified_name.rsplit(".", 1)[-1]
+                name_to_node_id[simple] = n.id
+
+        # Get per-file imports for the new element
+        imports: list[ImportElement] = []
+        if elem.source_path:
+            per_file = parser.parse_file(Path(elem.source_path))
+            imports = [e for e in per_file if isinstance(e, ImportElement)]
+
+        _create_relationship_edges(
+            canvas=canvas,
+            elem=elem,
+            node_id=node_id,
+            name_to_node_id=name_to_node_id,
+            all_elements=code_elements,
+            import_elements=imports,
+        )
 
     # Apply changes: code_modified -> update canvas node text
     for qname in diff.code_modified:
