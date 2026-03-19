@@ -38,16 +38,23 @@ def _import_from_qname(qname: str) -> str:
     return f"from {module} import {name}"
 
 
+def _camel_to_snake(name: str) -> str:
+    """Convert CamelCase to snake_case."""
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
+    s = re.sub(r"([a-z\d])([A-Z])", r"\1_\2", s)
+    return s.lower()
+
+
 def _field_name_from_label(label: str | None, target_name: str) -> str:
     """Extract a field name from an edge label per spec Data Model §7.
 
     - If *label* contains `` \u2014 `` (space + em-dash + space), the
       substring before the first occurrence is the field name.
     - If *label* has no such separator, the entire label is the field name.
-    - If *label* is ``None``, derive the field name from *target_name* (lower-cased).
+    - If *label* is ``None``, derive the field name from *target_name* (snake_cased).
     """
     if label is None:
-        return target_name.lower()
+        return _camel_to_snake(target_name)
     separator = " \u2014 "
     if separator in label:
         return label.split(separator, 1)[0]

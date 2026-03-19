@@ -215,3 +215,21 @@ class TestGenerateMethod:
         assert "def parse(self, source: str) -> AST:" in source
         assert "Pseudo Code:" in source
         assert "Tokenize source" in source
+
+
+class TestSnakeCaseFieldName:
+    def test_camel_case_to_snake(self):
+        from ccoding.code.generator import _field_name_from_label
+        assert _field_name_from_label(None, "ParserConfig") == "parser_config"
+
+    def test_multi_word_camel(self):
+        from ccoding.code.generator import _field_name_from_label
+        assert _field_name_from_label(None, "HTTPClient") == "http_client"
+
+    def test_label_overrides_derivation(self):
+        from ccoding.code.generator import _field_name_from_label
+        assert _field_name_from_label("myField", "ParserConfig") == "myField"
+
+    def test_em_dash_separator(self):
+        from ccoding.code.generator import _field_name_from_label
+        assert _field_name_from_label("config \u2014 parser settings", "ParserConfig") == "config"
