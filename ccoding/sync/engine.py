@@ -353,6 +353,87 @@ def _field_to_detail_node(
     )
 
 
+def _detect_renames(
+    diff: SyncDiff,
+    code_element_map: dict[str, ClassElement],
+    canvas_node_map: dict[str, Node],
+    state: SyncState,
+) -> list[tuple[str, str]]:
+    """Detect potential renames by matching code-deleted elements with code-added elements.
+
+    When a class is renamed in source, the old qualified name disappears from code
+    (code_deleted) and a new one appears (code_added). If the old canvas node and
+    the new code element are structurally similar (same fields/methods, same file),
+    we treat it as a rename rather than a delete + add.
+
+    Returns a list of (old_qname, new_qname) pairs.
+    """
+    if not diff.code_deleted or not diff.code_added:
+        return []
+
+    renames: list[tuple[str, str]] = []
+    used_added: set[str] = set()
+
+    for old_qname in list(diff.code_deleted):
+        old_state = state.elements.get(old_qname)
+        if not old_state:
+            continue
+
+        best_match: str | None = None
+        best_score = 0.0
+
+        for new_qname in diff.code_added:
+            if new_qname in used_added:
+                continue
+            new_elem = code_element_map.get(new_qname)
+            if not new_elem:
+                continue
+
+            old_node = canvas_node_map.get(old_qname)
+            if not old_node:
+                continue
+
+            # Same source file is a strong signal
+            old_source = old_state.source_path
+            new_source = new_elem.source_path or ""
+            same_file = bool(
+                old_source and new_source and (
+                    Path(old_source).name == Path(new_source).name
+                    or str(old_source) == str(new_source)
+                )
+            )
+
+            # Structural similarity: compare field names and method names
+            new_field_names = {f.name for f in new_elem.fields}
+            new_method_names = {m.name for m in new_elem.methods}
+
+            # Parse old node to get its structure
+            old_content = parse_class_node(old_node.text)
+            old_field_names = {f.name for f in old_content.fields}
+            old_method_names = {m.name for m in old_content.methods}
+
+            # Jaccard similarity on fields + methods
+            all_names = old_field_names | old_method_names | new_field_names | new_method_names
+            if not all_names:
+                score = 0.5 if same_file else 0.0
+            else:
+                common = (old_field_names & new_field_names) | (old_method_names & new_method_names)
+                score = len(common) / len(all_names)
+
+            if same_file:
+                score += 0.3  # strong bonus for same file
+
+            if score > best_score and score >= 0.5:
+                best_score = score
+                best_match = new_qname
+
+        if best_match:
+            renames.append((old_qname, best_match))
+            used_added.add(best_match)
+
+    return renames
+
+
 _ALLOWED_RELATIONS = ("inherits", "implements", "composes", "depends")
 
 
@@ -733,6 +814,42 @@ def sync(
     diff = compute_diff(state, canvas_hashes, code_hashes)
 
     result = SyncResult()
+
+    # Detect renames before processing deletes/adds
+    renames = _detect_renames(diff, code_element_map, canvas_node_map, state)
+    for old_qname, new_qname in renames:
+        node = canvas_node_map.get(old_qname)
+        if node and node.ccoding:
+            # Update qualified name
+            node.ccoding.qualified_name = new_qname
+            # Update text content from new code
+            new_elem = code_element_map[new_qname]
+            content = _element_to_class_content(new_elem)
+            node.text = render_class_node(content)
+            # Update source path
+            new_source = _source_rel(new_elem.source_path, project_root)
+
+            # Update state: remove old, add new
+            old_state_elem = state.elements.pop(old_qname, None)
+            if old_state_elem:
+                state.elements[new_qname] = ElementState(
+                    canvas_hash=content_hash(node.text),
+                    code_hash=code_hashes.get(new_qname, ""),
+                    canvas_node_id=node.id,
+                    source_path=new_source,
+                )
+
+            # Remove from diff lists so they're not double-processed
+            if old_qname in diff.code_deleted:
+                diff.code_deleted.remove(old_qname)
+            if new_qname in diff.code_added:
+                diff.code_added.remove(new_qname)
+
+            # Update maps for downstream processing
+            canvas_node_map[new_qname] = node
+            canvas_hashes[new_qname] = content_hash(node.text)
+
+            result.code_to_canvas.append(new_qname)
 
     # Handle conflicts
     if diff.conflicts:

@@ -847,3 +847,41 @@ class TestCycleDetection:
         # Both elements should still be processed
         src = tmp_project / "src"
         assert (src / "a.py").exists() or (src / "b.py").exists()
+
+
+class TestRenameDetection:
+    def test_renamed_class_updates_canvas_node(self, tmp_project: Path):
+        """When a class is renamed, the canvas node should be updated
+        instead of creating stale + new."""
+        canvas_path = tmp_project / "design.canvas"
+        src = tmp_project / "src"
+
+        # Create initial class
+        (src / "original.py").write_text(
+            'class OriginalName:\n'
+            '    """A class.\n\n    Responsibility:\n        Do stuff.\n    """\n'
+            '    value: int\n'
+        )
+        sync(canvas_path=canvas_path, project_root=tmp_project)
+
+        # Rename the class (same file, same structure, different name)
+        (src / "original.py").write_text(
+            'class RenamedClass:\n'
+            '    """A class.\n\n    Responsibility:\n        Do stuff.\n    """\n'
+            '    value: int\n'
+        )
+        result = sync(canvas_path=canvas_path, project_root=tmp_project)
+        canvas = read_canvas(canvas_path)
+
+        # The renamed class should exist on canvas
+        renamed_node = next(
+            (n for n in canvas.nodes
+             if n.ccoding and n.ccoding.qualified_name == "original.RenamedClass"),
+            None
+        )
+        assert renamed_node is not None, "Renamed class should exist on canvas"
+
+        # Should not have stale nodes for the old name
+        stale_nodes = [n for n in canvas.nodes
+                       if n.ccoding and n.ccoding.status == "stale"]
+        assert len(stale_nodes) == 0, f"Should not have stale nodes: {[n.ccoding.qualified_name for n in stale_nodes]}"
