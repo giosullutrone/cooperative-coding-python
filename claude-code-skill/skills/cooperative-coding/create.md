@@ -5,7 +5,7 @@ description: "Use when building a new CooperativeCoding canvas design from scrat
 
 See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
 
-## Create Mode
+# Create Mode
 
 Build an initial canvas design from scratch through conversation.
 

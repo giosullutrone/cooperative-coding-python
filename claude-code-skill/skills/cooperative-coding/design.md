@@ -5,7 +5,7 @@ description: "Use when analyzing an existing CooperativeCoding canvas and propos
 
 See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
 
-## Design Mode
+# Design Mode
 
 Analyze an existing canvas and propose improvements as ghost nodes.
 

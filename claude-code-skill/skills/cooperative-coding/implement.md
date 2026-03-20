@@ -5,7 +5,7 @@ description: "Use when generating code from accepted CooperativeCoding canvas no
 
 See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
 
-## Implement Mode
+# Implement Mode
 
 Generate source code from accepted canvas nodes.
 
