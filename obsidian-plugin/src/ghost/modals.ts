@@ -51,11 +51,21 @@ export class ProposeModal extends Modal {
 
     new Setting(contentEl)
       .setName("Stereotype")
-      .setDesc("Optional: protocol, abstract, dataclass, enum")
-      .addDropdown((drop) => {
-        drop.addOption("", "(none)");
-        for (const s of STEREOTYPES.filter(Boolean)) drop.addOption(s, s);
-        drop.onChange((v) => { this.stereotype = v; });
+      .setDesc("Optional — any value accepted")
+      .addText((text) => {
+        text.setPlaceholder("e.g., protocol, abstract, dataclass, enum");
+        text.onChange((v) => { this.stereotype = v; });
+        // Attach datalist for autocomplete suggestions
+        const input = text.inputEl;
+        const datalist = document.createElement("datalist");
+        datalist.id = "ccoding-stereotype-suggestions";
+        for (const s of STEREOTYPES.filter(Boolean)) {
+          const opt = document.createElement("option");
+          opt.value = s;
+          datalist.appendChild(opt);
+        }
+        input.setAttribute("list", datalist.id);
+        input.parentElement?.appendChild(datalist);
       });
 
     new Setting(contentEl)
@@ -253,11 +263,20 @@ export class ElevateModal extends Modal {
 
     new Setting(contentEl)
       .setName("Stereotype")
-      .setDesc("Optional")
-      .addDropdown((drop) => {
-        drop.addOption("", "(none)");
-        for (const s of STEREOTYPES.filter(Boolean)) drop.addOption(s, s);
-        drop.onChange((v) => { this.stereotype = v; });
+      .setDesc("Optional — any value accepted")
+      .addText((text) => {
+        text.setPlaceholder("e.g., protocol, abstract, dataclass, enum");
+        text.onChange((v) => { this.stereotype = v; });
+        const input = text.inputEl;
+        const datalist = document.createElement("datalist");
+        datalist.id = "ccoding-stereotype-elevate";
+        for (const s of STEREOTYPES.filter(Boolean)) {
+          const opt = document.createElement("option");
+          opt.value = s;
+          datalist.appendChild(opt);
+        }
+        input.setAttribute("list", datalist.id);
+        input.parentElement?.appendChild(datalist);
       });
 
     new Setting(contentEl)
@@ -444,11 +463,20 @@ export class CreateElementModal extends Modal {
 
     new Setting(contentEl)
       .setName("Stereotype")
-      .setDesc("Optional: protocol, abstract, dataclass, enum")
-      .addDropdown((drop) => {
-        drop.addOption("", "(none)");
-        for (const s of STEREOTYPES.filter(Boolean)) drop.addOption(s, s);
-        drop.onChange((v) => { this.stereotype = v; });
+      .setDesc("Optional — any value accepted")
+      .addText((text) => {
+        text.setPlaceholder("e.g., protocol, abstract, dataclass, enum");
+        text.onChange((v) => { this.stereotype = v; });
+        const input = text.inputEl;
+        const datalist = document.createElement("datalist");
+        datalist.id = "ccoding-stereotype-create";
+        for (const s of STEREOTYPES.filter(Boolean)) {
+          const opt = document.createElement("option");
+          opt.value = s;
+          datalist.appendChild(opt);
+        }
+        input.setAttribute("list", datalist.id);
+        input.parentElement?.appendChild(datalist);
       });
 
     new Setting(contentEl)
