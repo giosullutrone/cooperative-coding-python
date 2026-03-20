@@ -16,17 +16,18 @@ You have **read-only** access. Do not modify any files.
 You receive:
 - **Project root:** the directory containing `.ccoding/`
 - **Canvas path:** the `.canvas` file to analyze
+- **CLI path:** the path to the ccoding binary (default: `ccoding`). Use this for all CLI commands below.
 
 ## Process
 
 ### 1. Gather Sync State
 
-Run these CLI commands from the project root:
+Run these CLI commands from the project root (substitute `<ccoding>` with the CLI path you received):
 
 ```bash
-ccoding status          # Overall project state and drift summary
-ccoding diff            # Dry-run sync — shows what would change
-ccoding check           # Pass/fail validation (same as pre-commit)
+<ccoding> status          # Overall project state and drift summary
+<ccoding> diff            # Dry-run sync — shows what would change
+<ccoding> check           # Pass/fail validation (same as pre-commit)
 ```
 
 ### 2. Read the Canvas

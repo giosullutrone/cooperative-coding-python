@@ -3,18 +3,19 @@ name: cooperative-coding:review
 description: "Use when checking CooperativeCoding canvas-to-code drift, architectural violations, or staleness"
 ---
 
+Before starting, ensure the prerequisites from the `cooperative-coding` skill have been completed (CLI check, canvas resolution).
+
 # Review Mode
 
 Compare canvas design to actual code. Flag drift and violations.
 
-See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
+## Use Review Agent
 
-## Dispatch Review Agent
-
-This mode delegates analysis to the `ccoding-review` agent, which runs autonomously with read-only access. Dispatch it with:
+This mode delegates analysis to the `ccoding-review` agent, which runs autonomously with read-only access. Use the agent and provide it with:
 
 1. The project root path (directory containing `.ccoding/`)
 2. The canvas path (from `.claude/cooperative-coding.local.md` or canvas resolution)
+3. The CLI path (`ccoding_path` from `.claude/cooperative-coding.local.md`, default: `ccoding`)
 
 The agent reads the canvas, runs CLI diagnostics, reads tracked source files, and returns a structured findings report grouped by type (drift, staleness, missing nodes, architectural violations) with severity levels (error/warning/info).
 

@@ -3,7 +3,7 @@ name: cooperative-coding:implement
 description: "Use when generating code from accepted CooperativeCoding canvas nodes — skeleton or full implementation"
 ---
 
-See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
+Before starting, ensure the prerequisites from the `cooperative-coding` skill have been completed (CLI check, canvas resolution).
 
 # Implement Mode
 
@@ -52,4 +52,4 @@ Before writing any file, run `ccoding status`. If the file has unsynchronized ch
 
 ## Post-Implementation Review
 
-After implementing multiple classes, dispatch the `ccoding-review` agent to check alignment between the canvas and the generated code. This catches drift early before it accumulates.
+After implementing multiple classes, use the `ccoding-review` agent to check alignment between the canvas and the generated code. This catches drift early before it accumulates.

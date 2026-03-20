@@ -3,7 +3,7 @@ name: cooperative-coding:design
 description: "Use when analyzing an existing CooperativeCoding canvas and proposing improvements as ghost nodes"
 ---
 
-See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
+Before starting, ensure the prerequisites from the `cooperative-coding` skill have been completed (CLI check, canvas resolution).
 
 # Design Mode
 

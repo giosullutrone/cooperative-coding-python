@@ -3,7 +3,7 @@ name: cooperative-coding:create
 description: "Use when building a new CooperativeCoding canvas design from scratch — gathering requirements, proposing architecture, creating nodes and edges"
 ---
 
-See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling.
+Before starting, ensure the prerequisites from the `cooperative-coding` skill have been completed (CLI check, canvas resolution).
 
 # Create Mode
 
