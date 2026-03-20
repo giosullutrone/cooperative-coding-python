@@ -3,6 +3,18 @@
   "description": "Claude Code integration for CooperativeCoding — collaborative software design on visual canvases with four modes: create, design, implement, and review",
   "version": "0.1.0",
   "author": {
-    "name": "CooperativeCoding"
-  }
+    "name": "CooperativeCoding",
+    "url": "https://github.com/giosullutrone/cooperative-coding"
+  },
+  "repository": "https://github.com/giosullutrone/cooperative-coding-python",
+  "license": "MIT",
+  "keywords": [
+    "design",
+    "architecture",
+    "canvas",
+    "uml",
+    "collaborative",
+    "sync",
+    "ghost-nodes"
+  ]
 }
