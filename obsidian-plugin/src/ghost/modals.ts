@@ -17,6 +17,7 @@ export class ProposeModal extends Modal {
   private kind = "class";
   private stereotype = "";
   private rationale = "";
+  private language = "";
 
   constructor(
     app: App,
@@ -69,6 +70,14 @@ export class ProposeModal extends Modal {
       });
 
     new Setting(contentEl)
+      .setName("Language")
+      .setDesc("Optional — overrides default language for this node")
+      .addText((text) =>
+        text.setPlaceholder("e.g., python, typescript")
+          .onChange((v) => { this.language = v; }),
+      );
+
+    new Setting(contentEl)
       .setName("Rationale")
       .setDesc("Why is this element being proposed?")
       .addTextArea((area) =>
@@ -98,6 +107,7 @@ export class ProposeModal extends Modal {
     };
     if (this.stereotype) opts.stereotype = this.stereotype;
     if (this.rationale.trim()) opts.rationale = this.rationale.trim();
+    if (this.language.trim()) opts.language = this.language.trim();
 
     this.close();
 
@@ -421,6 +431,7 @@ export interface CreateElementResult {
   name: string;
   stereotype?: string;
   description?: string;
+  language?: string;
 }
 
 /**
@@ -432,6 +443,7 @@ export class CreateElementModal extends Modal {
   private name = "";
   private stereotype = "";
   private description = "";
+  private language = "";
 
   constructor(
     app: App,
@@ -480,6 +492,14 @@ export class CreateElementModal extends Modal {
       });
 
     new Setting(contentEl)
+      .setName("Language")
+      .setDesc("Optional — overrides default language for this node")
+      .addText((text) =>
+        text.setPlaceholder("e.g., python, typescript")
+          .onChange((v) => { this.language = v; }),
+      );
+
+    new Setting(contentEl)
       .setName("Description")
       .setDesc("Optional description")
       .addTextArea((area) =>
@@ -508,6 +528,7 @@ export class CreateElementModal extends Modal {
       name: this.name.trim(),
       stereotype: this.stereotype || undefined,
       description: this.description.trim() || undefined,
+      language: this.language.trim() || undefined,
     });
   }
 

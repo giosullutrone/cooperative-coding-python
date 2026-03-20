@@ -36,6 +36,7 @@ export interface PluginSettings {
   showRejectedNodes: boolean;
   autoReloadOnChange: boolean;
   commandTimeout: number;
+  defaultLanguage: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   showRejectedNodes: false,
   autoReloadOnChange: true,
   commandTimeout: 30000,
+  defaultLanguage: "",
 };
 
 /**

@@ -108,6 +108,32 @@ export default class CooperativeCodingPlugin extends Plugin {
     await this.saveData(this.settings);
     this.bridge?.updateSettings(this.settings);
     this.patcher?.updateSettings(this.settings);
+    // Write language to active canvas if set
+    if (this.settings.defaultLanguage) {
+      this.writeCanvasLanguage(this.settings.defaultLanguage);
+    }
+  }
+
+  /** Write the default language to the active canvas file's top-level ccoding metadata. */
+  private async writeCanvasLanguage(language: string): Promise<void> {
+    const leaf = this.app.workspace.getMostRecentLeaf();
+    if (!leaf) return;
+    const view = leaf.view as any;
+    const filePath = view?.file?.path;
+    if (!filePath || !filePath.endsWith(".canvas")) return;
+
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!file) return;
+
+    try {
+      const raw = await this.app.vault.read(file as any);
+      const json = JSON.parse(raw);
+      json.ccoding = json.ccoding || {};
+      json.ccoding.language = language || undefined;
+      await this.app.vault.modify(file as any, JSON.stringify(json, null, 2));
+    } catch {
+      // Silently fail — non-critical operation
+    }
   }
 
   // ─── Commands ──────────────────────────────────────────────
@@ -557,16 +583,17 @@ export default class CooperativeCodingPlugin extends Plugin {
 
     const text = buildNodeText(element.kind, element.name, element.description);
     const dims = defaultDimensions(element.kind);
-
-    // Place near the center of the viewport, offset by a random small amount
-    // to avoid stacking on the same spot
     const offset = Math.floor(Math.random() * 200) - 100;
+
+    // Use element-specific language or fall back to settings default
+    const language = element.language || this.settings.defaultLanguage || undefined;
 
     addNodeToCanvasData(data, {
       kind: element.kind,
       qualifiedName: element.name,
       status: "accepted",
       stereotype: element.stereotype,
+      language,
       text,
       x: offset,
       y: offset,

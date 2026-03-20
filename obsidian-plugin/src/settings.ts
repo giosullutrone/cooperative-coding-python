@@ -88,5 +88,20 @@ export class CcodingSettingTab extends PluginSettingTab {
             }
           }),
       );
+
+    new Setting(containerEl)
+      .setName("Default language")
+      .setDesc(
+        "Default programming language for canvas nodes (e.g., python, typescript). Leave empty to not set.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("python")
+          .setValue(this.plugin.settings.defaultLanguage)
+          .onChange(async (value) => {
+            this.plugin.settings.defaultLanguage = value.trim();
+            await this.plugin.saveSettings();
+          }),
+      );
   }
 }

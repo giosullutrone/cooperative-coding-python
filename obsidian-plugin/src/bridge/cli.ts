@@ -10,6 +10,7 @@ export interface ProposeOptions {
   name: string;
   stereotype?: string;
   rationale?: string;
+  language?: string;
 }
 
 export interface ProposeEdgeOptions {
@@ -76,6 +77,7 @@ export class CcodingBridge {
     const args = ["propose", "--kind", opts.kind, "--name", opts.name];
     if (opts.stereotype) args.push("--stereotype", opts.stereotype);
     if (opts.rationale) args.push("--rationale", opts.rationale);
+    if (opts.language) args.push("--language", opts.language);
     return this.run(args);
   }
 

@@ -47,6 +47,7 @@ export interface NewNodeData {
   qualifiedName: string;
   status: string;
   stereotype?: string;
+  language?: string;
   text: string;
   x: number;
   y: number;
@@ -83,6 +84,7 @@ export function addNodeToCanvasData(
       qualifiedName: node.qualifiedName,
       status: node.status,
       ...(node.stereotype ? { stereotype: node.stereotype } : {}),
+      ...(node.language ? { language: node.language } : {}),
       proposedBy: null,
       proposalRationale: null,
     },
