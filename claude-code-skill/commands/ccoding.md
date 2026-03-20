@@ -8,6 +8,10 @@ The user wants to work with a CooperativeCoding canvas.
 
 **Mode requested:** $ARGUMENTS
 
-If a mode was specified (create, design, implement, or review), proceed directly with that mode. If no mode was specified, check `.claude/cooperative-coding.local.md` for `last_mode` and suggest it, or ask which mode the user wants.
+If a mode was specified, route directly to the corresponding skill:
+- `create` → follow the `cooperative-coding:create` skill
+- `design` → follow the `cooperative-coding:design` skill
+- `implement` → follow the `cooperative-coding:implement` skill
+- `review` → follow the `cooperative-coding:review` skill
 
-Follow the `cooperative-coding` skill instructions for the selected mode.
+If no mode was specified, follow the `cooperative-coding` skill (it handles mode resolution via `last_mode` or asking the user).
