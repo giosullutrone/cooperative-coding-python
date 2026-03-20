@@ -215,6 +215,12 @@ export default class CooperativeCodingPlugin extends Plugin {
       name: "Add package",
       callback: () => this.openCreateElementModal("package"),
     });
+
+    this.addCommand({
+      id: "cooperative-coding:add-module",
+      name: "Add module",
+      callback: () => this.openCreateElementModal("module"),
+    });
   }
 
   // ─── Canvas Context Menus ──────────────────────────────────
@@ -334,6 +340,10 @@ export default class CooperativeCodingPlugin extends Plugin {
         menu.addItem((item: any) =>
           item.setTitle("Add package...").setIcon("package")
             .onClick(() => this.openCreateElementModal("package")),
+        );
+        menu.addItem((item: any) =>
+          item.setTitle("Add module...").setIcon("file-code")
+            .onClick(() => this.openCreateElementModal("module")),
         );
 
         // CLI-backed proposals
