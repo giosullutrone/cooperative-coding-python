@@ -29,6 +29,7 @@ import {
   type AddRelationResult,
   type ConnectContextResult,
 } from "./ghost/modals";
+import { RestoreModal, type RestoreChoice } from "./ghost/restore-modal";
 import { layoutCanvas } from "./layout/hierarchical";
 import {
   addNodeToCanvasData,
@@ -281,8 +282,8 @@ export default class CooperativeCodingPlugin extends Plugin {
             } else if (meta.status === "stale") {
               menu.addSeparator();
               menu.addItem((item: any) =>
-                item.setTitle("Restore (re-link to code)").setIcon("refresh-cw")
-                  .onClick(() => this.runAction(() => restoreElement(this.bridge, node.id))),
+                item.setTitle("Recover stale element...").setIcon("refresh-cw")
+                  .onClick(() => this.openRestoreModal(node)),
               );
             }
           }
@@ -717,6 +718,41 @@ export default class CooperativeCodingPlugin extends Plugin {
 
     new Notice("Detail node removed from canvas.", 3000);
     this.refreshCanvas();
+  }
+
+  private openRestoreModal(node: any): void {
+    const meta = parseCcodingMetadata(node?.unknownData?.ccoding);
+    if (!meta) return;
+
+    const qualifiedName = meta.qualifiedName || "unknown";
+    const sourcePath = meta.source || "";
+
+    new RestoreModal(this.app, node.id, qualifiedName, sourcePath, async (choice: RestoreChoice) => {
+      if (choice.action === "restore") {
+        await this.runAction(() => restoreElement(this.bridge, node.id));
+      } else if (choice.action === "relink") {
+        // Update canvas data directly, then sync
+        const canvas = this.currentCanvas;
+        if (!canvas) return;
+        const data = canvas.getData?.();
+        if (!data) return;
+
+        const canvasNode = data.nodes.find((n: any) => n.id === node.id);
+        if (canvasNode?.ccoding) {
+          canvasNode.ccoding.qualifiedName = choice.qualifiedName;
+          canvasNode.ccoding.source = choice.source;
+          canvasNode.ccoding.status = "accepted";
+        }
+        canvas.setData?.(data);
+        canvas.requestSave?.();
+        new Notice(`Re-linked to ${choice.qualifiedName}`, 3000);
+        this.refreshCanvas();
+        // Sync to propagate the re-link
+        await this.runAction(() => syncCanvas(this.bridge));
+      } else if (choice.action === "remove") {
+        this.removeDetailNode(node.id); // Reuses the same removal logic from Task 3
+      }
+    }).open();
   }
 
   // ─── List Proposals / Diff ─────────────────────────────────
