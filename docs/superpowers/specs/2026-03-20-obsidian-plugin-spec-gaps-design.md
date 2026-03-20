@@ -55,7 +55,7 @@ The spec requires `context` edges connecting plain canvas notes (design rational
   - **Target node** — dropdown of eligible nodes. If source is a plain node, show only ccoding nodes. If source is a ccoding node, show only plain nodes. Reuses the node-picker pattern from `AddRelationModal`.
   - **Label** — optional text field for edge description.
 - Validation: enforced by filtering — at least one endpoint is always a context node.
-- On submit: calls `addEdgeToCanvasData()` with `relation: "context"`. No CLI involved.
+- On submit: calls `addEdgeToCanvasData()` with `relation: "context"` and `status: "accepted"` (context edges are canvas-only and unaffected by sync, but the `NewEdgeData` interface requires a status value). No CLI involved.
 
 **Context menu entries:**
 
@@ -64,7 +64,7 @@ The spec requires `context` edges connecting plain canvas notes (design rational
 
 **Files:**
 
-- New: `ghost/modals.ts` — add `ConnectContextModal` class
+- Modify: `ghost/modals.ts` — add `ConnectContextModal` class
 - Modify: `main.ts` — add context menu entries for plain nodes and ccoding nodes
 
 ---
@@ -92,7 +92,29 @@ New file: `sync/conflict-parser.ts`
 
 - `parseConflictOutput(result: CommandResult) → ConflictInfo[]`
 - Each `ConflictInfo`: `qualifiedName`, `elementKind`, `canvasSummary`, `codeSummary`, `elementId`
-- Parses the `ccoding sync` stdout/stderr for conflict markers in the CLI's output format.
+- Parses the JSON output from `ccoding sync --json`. The `--json` flag produces machine-parseable output including a `conflicts` array with per-element details. This flag needs to be added to the CLI if it doesn't exist yet.
+
+**CLI output format dependency:**
+
+The conflict parser and sync state display (Section 9) both depend on structured CLI output. The CLI must support a `--json` flag on `sync`, `status`, and `diff` commands that produces output like:
+
+```json
+{
+  "status": "conflicts",
+  "synced": [{"qualifiedName": "...", "action": "updated"}],
+  "conflicts": [
+    {
+      "qualifiedName": "UserService",
+      "elementKind": "class",
+      "elementId": "abc123",
+      "canvasSummary": "Added method parse()",
+      "codeSummary": "Changed method signature of process()"
+    }
+  ]
+}
+```
+
+If `--json` is not yet available in the CLI, it must be added before implementing this feature.
 
 **New modal: `ConflictResolutionModal`**
 
@@ -104,12 +126,12 @@ New file: `sync/conflict-parser.ts`
     - "Code version:" — summary of the code-side changes
     - Three buttons: **Keep Canvas** | **Keep Code** | **Skip**
   - After choosing, section collapses with a resolution indicator.
-- Footer: **Apply Resolutions** button (disabled until all non-skipped conflicts have a choice) and **Skip All** button.
+- Footer: **Apply Resolutions** button (disabled until at least one conflict has a non-skip choice) and **Skip All** button (closes the modal immediately, leaving all conflicts unresolved for next sync attempt — equivalent to Cancel).
 
 **Resolution execution:**
 
 - "Keep Canvas": no action — the canvas already has the desired version. Next sync propagates canvas → code.
-- "Keep Code": call `ccoding show <qualifiedName>` to get the code version, then `ccoding set-text <elementId>` to update the canvas node to match code. Next sync sees no diff.
+- "Keep Code": call `ccoding show <qualifiedName>` to get the code-side representation as canvas-formatted structured markdown (the `show` command returns the canvas representation derived from code, not raw source). Then call `ccoding set-text <elementId>` to update the canvas node text. Next sync sees no diff.
 - "Skip": leave as-is. Element stays conflicted until next manual resolution.
 - After applying resolutions, re-run `ccoding sync` to complete the non-conflicted changes.
 
@@ -166,7 +188,7 @@ The spec supports per-canvas `language` default and per-node `language` override
 **Plugin settings:**
 
 - Add a "Default language" text field to the settings tab (e.g., `python`, `typescript`, `go`).
-- This value is written to the canvas-level context node metadata when the user sets it while a canvas is active.
+- This value is written to the canvas file's top-level `ccoding` object (e.g., `{ "ccoding": { "language": "python" }, "nodes": [...], "edges": [...] }`). The plugin reads/writes this by loading the raw `.canvas` JSON via the vault adapter, modifying the `ccoding` field, and saving back — since Obsidian's canvas API does not expose top-level custom fields through `getData()`/`setData()`.
 
 **Per-node language override:**
 
@@ -202,7 +224,7 @@ The plugin only supports global `accept-all` / `reject-all`. The spec permits se
 - Triggered via new command `bulk-manage` and canvas background context menu entry "Manage proposals..."
 - Layout:
   - Filter bar at top: kind filter dropdown (all / class / interface / edge / etc.), text search field.
-  - Scrollable list of all proposed elements. Each row: checkbox, element name, kind badge, proposer info.
+  - Scrollable list of all proposed elements. Each row: checkbox, element name, kind badge, rationale preview (from `proposalRationale`).
   - Select All / Deselect All toggle.
 - Footer: **Accept Selected** | **Reject Selected** | **Cancel**
 - On submit: iterates selected items, calls `bridge.accept(id)` or `bridge.reject(id)` for each sequentially via the existing CLI queue.
@@ -236,7 +258,7 @@ Replace the direct `bridge.restore(id)` call with a modal that presents the thre
 - Shows: element's `qualifiedName`, expected source path, explanation ("This element's code was deleted or moved.").
 - Options:
   - **Restore code** — regenerate the code file. Calls `bridge.restore(id)`.
-  - **Re-link** — text field for new qualified name or source path. Updates the node's `ccoding.qualifiedName` and/or `ccoding.source` in canvas data, then syncs.
+  - **Re-link** — text field for new qualified name or source path. Updates the node's `ccoding.qualifiedName` and/or `ccoding.source` in canvas data, sets `ccoding.status` to `"accepted"` (completing the `stale → accepted` transition), then syncs.
   - **Remove from canvas** — deletes the stale node and its edges from canvas data. Direct canvas manipulation, no CLI.
 
 **Files:**
@@ -275,6 +297,12 @@ The background context menu and command palette offer direct creation for class,
 
 Users can promote methods/fields to detail nodes but cannot demote them back. The spec maps demotion to node deletion — the code-side method/field is untouched.
 
+### Spec Requirements
+
+- Detail node content is synced as part of the parent class node (03-sync.md §3.1).
+- Deleting an accepted node from the canvas does not delete the code-side construct — the method/field continues to exist in the source file (03-sync.md, canvas→code rules: "Delete accepted node from canvas").
+- The progressive detail principle means only elements needing design attention get promoted; demotion reverses this (00-introduction.md, Core Principles).
+
 ### Design
 
 - Add context menu option on method/field detail nodes: "Remove detail node"
@@ -304,7 +332,8 @@ The spec says implementations SHOULD log/display what sync changed after each cy
 New file: `sync/output-parser.ts`
 
 - `parseSyncOutput(result: CommandResult) → SyncSummary`
-- `SyncSummary`: `nodesUpdated`, `edgesAdded`, `edgesRemoved`, `conflicts`, `rawOutput`
+- Parses the JSON output from `ccoding sync --json` (same `--json` flag described in Section 2).
+- `SyncSummary`: `nodesUpdated`, `nodesCreated`, `edgesUpdated`, `conflicts`, `rawOutput` — field names derived from the CLI's JSON output structure.
 
 **Structured notices:**
 
@@ -325,9 +354,9 @@ New file: `sync/output-parser.ts`
 
 | File | Purpose |
 |------|---------|
-| `sync/conflict-parser.ts` | Parse CLI sync output for conflict info |
+| `sync/conflict-parser.ts` | Parse CLI sync output for conflict info; exports `ConflictInfo` type |
 | `sync/conflict-modal.ts` | `ConflictResolutionModal` class |
-| `sync/output-parser.ts` | Parse CLI sync/status output for structured display |
+| `sync/output-parser.ts` | Parse CLI sync/status output for structured display; exports `SyncSummary` type |
 | `ghost/bulk-modal.ts` | `BulkOperationsModal` for selective accept/reject |
 | `ghost/restore-modal.ts` | `RestoreModal` for stale node recovery |
 
@@ -340,5 +369,5 @@ New file: `sync/output-parser.ts`
 | `main.ts` | New commands (bulk-manage, add-module), new context menu entries (context edges, detail demotion, bulk manage), restore opens modal |
 | `bridge/cli.ts` | Ensure `show()` and `setText()` methods exist |
 | `settings.ts` | Add `defaultLanguage` setting |
-| `types.ts` | Add `defaultLanguage` to `PluginSettings`, `ConflictInfo`, `SyncSummary` types |
+| `types.ts` | Add `defaultLanguage` to `PluginSettings` |
 | `styles.css` | No changes needed — existing data-attribute styling covers all new features |
