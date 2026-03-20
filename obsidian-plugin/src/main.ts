@@ -286,6 +286,16 @@ export default class CooperativeCodingPlugin extends Plugin {
                 .onClick(() => this.openProposeEdgeModal(node)),
             );
           }
+
+          // Detail node demotion (method/field only)
+          if (meta.kind === "method" || meta.kind === "field") {
+            menu.addItem((item: any) =>
+              item.setTitle("Remove detail node").setIcon("trash-2")
+                .onClick(() => {
+                  this.removeDetailNode(node.id);
+                }),
+            );
+          }
         } else {
           // Plain canvas node — offer to elevate
           menu.addSeparator();
@@ -598,6 +608,31 @@ export default class CooperativeCodingPlugin extends Plugin {
     canvas.requestSave?.();
 
     new Notice(`Added ${relation.relation} relation`, 3000);
+    this.refreshCanvas();
+  }
+
+  /**
+   * Remove a detail node (method/field) and its detail edge from the canvas.
+   * The code-side method/field is untouched per spec.
+   */
+  private removeDetailNode(nodeId: string): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) return;
+    const data = canvas.getData?.();
+    if (!data) return;
+
+    // Remove edges connected to this node
+    data.edges = (data.edges || []).filter(
+      (e: any) => e.fromNode !== nodeId && e.toNode !== nodeId,
+    );
+
+    // Remove the node
+    data.nodes = (data.nodes || []).filter((n: any) => n.id !== nodeId);
+
+    canvas.setData?.(data);
+    canvas.requestSave?.();
+
+    new Notice("Detail node removed from canvas.", 3000);
     this.refreshCanvas();
   }
 
