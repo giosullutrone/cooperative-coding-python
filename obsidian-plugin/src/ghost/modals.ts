@@ -621,3 +621,77 @@ export class AddRelationModal extends Modal {
     this.contentEl.empty();
   }
 }
+
+export interface ConnectContextResult {
+  targetId: string;
+  label?: string;
+}
+
+/**
+ * Modal for connecting a context node to a code element (or vice versa).
+ * Creates a context edge — canvas-only, never synced.
+ */
+export class ConnectContextModal extends Modal {
+  private targetId = "";
+  private label = "";
+
+  constructor(
+    app: App,
+    private sourceLabel: string,
+    private sourceId: string,
+    private availableTargets: Array<{ id: string; label: string }>,
+    private onDone: (result: ConnectContextResult) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("h3", {
+      text: `Connect "${this.sourceLabel}" to...`,
+    });
+
+    new Setting(contentEl)
+      .setName("Target")
+      .addDropdown((drop) => {
+        drop.addOption("", "Select target...");
+        for (const t of this.availableTargets) {
+          if (t.id !== this.sourceId) {
+            drop.addOption(t.id, t.label);
+          }
+        }
+        drop.onChange((v) => { this.targetId = v; });
+      });
+
+    new Setting(contentEl)
+      .setName("Label")
+      .setDesc("Optional description for this context link")
+      .addText((text) =>
+        text.setPlaceholder("").onChange((v) => { this.label = v; }),
+      );
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn.setButtonText("Connect").setCta().onClick(() => this.submit()),
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Cancel").onClick(() => this.close()),
+      );
+  }
+
+  private submit(): void {
+    if (!this.targetId) {
+      new Notice("Please select a target node.");
+      return;
+    }
+    this.close();
+    this.onDone({
+      targetId: this.targetId,
+      label: this.label.trim() || undefined,
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}

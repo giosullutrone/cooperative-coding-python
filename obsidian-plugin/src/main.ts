@@ -23,9 +23,11 @@ import {
   AddChildModal,
   CreateElementModal,
   AddRelationModal,
+  ConnectContextModal,
   type AddChildResult,
   type CreateElementResult,
   type AddRelationResult,
+  type ConnectContextResult,
 } from "./ghost/modals";
 import { layoutCanvas } from "./layout/hierarchical";
 import {
@@ -313,6 +315,12 @@ export default class CooperativeCodingPlugin extends Plugin {
             );
           }
 
+          // Context edge creation
+          menu.addItem((item: any) =>
+            item.setTitle("Attach context note...").setIcon("file-text")
+              .onClick(() => this.openConnectContextModal(node, true)),
+          );
+
           // Detail node demotion (method/field only)
           if (meta.kind === "method" || meta.kind === "field") {
             menu.addItem((item: any) =>
@@ -325,6 +333,10 @@ export default class CooperativeCodingPlugin extends Plugin {
         } else {
           // Plain canvas node — offer to elevate
           menu.addSeparator();
+          menu.addItem((item: any) =>
+            item.setTitle("Connect to code element...").setIcon("link")
+              .onClick(() => this.openConnectContextModal(node, false)),
+          );
           menu.addItem((item: any) =>
             item.setTitle("Elevate to ccoding element").setIcon("arrow-up-circle")
               .onClick(() => this.openElevateModal(node)),
@@ -499,6 +511,50 @@ export default class CooperativeCodingPlugin extends Plugin {
       targets.push({ id: n.id, label: this.getNodeLabel(n) });
     }
     return targets;
+  }
+
+  /** Get all plain (non-ccoding) nodes for context edge targeting. */
+  private getPlainNodes(): Array<{ id: string; label: string }> {
+    const canvas = this.currentCanvas;
+    if (!canvas?.nodes) return [];
+    const targets: Array<{ id: string; label: string }> = [];
+    for (const [, n] of canvas.nodes) {
+      const meta = parseCcodingMetadata(n.unknownData?.ccoding);
+      if (meta) continue; // Skip ccoding nodes
+      const label = n.text?.split("\n")[0]?.replace(/^#+\s*/, "").trim() || n.id;
+      targets.push({ id: n.id, label });
+    }
+    return targets;
+  }
+
+  private openConnectContextModal(sourceNode: any, sourceIsCcoding: boolean): void {
+    const sourceLabel = sourceIsCcoding
+      ? this.getNodeLabel(sourceNode)
+      : (sourceNode.text?.split("\n")[0]?.replace(/^#+\s*/, "").trim() || sourceNode.id);
+
+    // If source is ccoding, targets are plain nodes. If source is plain, targets are ccoding nodes.
+    const targets = sourceIsCcoding ? this.getPlainNodes() : this.getCcodingTargets();
+
+    new ConnectContextModal(this.app, sourceLabel, sourceNode.id, targets, (result: ConnectContextResult) => {
+      const canvas = this.currentCanvas;
+      if (!canvas) return;
+      const data = canvas.getData?.();
+      if (!data) return;
+
+      addEdgeToCanvasData(data, {
+        fromNode: sourceNode.id,
+        toNode: result.targetId,
+        relation: "context",
+        status: "accepted",
+        label: result.label,
+      });
+
+      canvas.setData?.(data);
+      canvas.requestSave?.();
+
+      new Notice("Context link created", 3000);
+      this.refreshCanvas();
+    }).open();
   }
 
   private openAddChildModal(parentNode: any, kind: "field" | "method"): void {
