@@ -1,5 +1,6 @@
 // src/main.ts
-import { Plugin, Notice } from "obsidian";
+import { Plugin, Notice, Menu } from "obsidian";
+import { around } from "monkey-around";
 import { type PluginSettings, DEFAULT_SETTINGS, parseCcodingMetadata, parseEdgeMetadata } from "./types";
 import { CcodingSettingTab } from "./settings";
 import { CcodingBridge } from "./bridge/cli";
@@ -17,9 +18,6 @@ import {
   checkStatus,
 } from "./ghost/actions";
 import {
-  ProposeModal,
-  ProposeEdgeModal,
-  ElevateModal,
   AddChildModal,
   CreateElementModal,
   AddRelationModal,
@@ -50,6 +48,7 @@ export default class CooperativeCodingPlugin extends Plugin {
   private selectionHandler: ((selection: Set<any>) => void) | null = null;
   private currentCanvas: any = null;
   private statusBarEl: HTMLElement | null = null;
+  private creationMenuPatched = false;
 
   async onload() {
     await this.loadSettings();
@@ -185,11 +184,11 @@ export default class CooperativeCodingPlugin extends Plugin {
 
     this.addCommand({
       id: "cooperative-coding:propose",
-      name: "Propose new element",
+      name: "Create new element",
       checkCallback: (checking: boolean) => {
-        if (!this.cliAvailable) return false;
+        if (!this.currentCanvas) return false;
         if (!checking) {
-          new ProposeModal(this.app, this.bridge, () => this.refreshCanvas()).open();
+          this.openCreateElementModal();
         }
         return true;
       },
@@ -325,40 +324,21 @@ export default class CooperativeCodingPlugin extends Plugin {
               .onClick(() => this.openAddRelationModal(node)),
           );
 
-          // CLI-backed propose edge
-          if (this.cliAvailable) {
-            menu.addItem((item: any) =>
-              item.setTitle("Propose edge (CLI)...").setIcon("git-branch")
-                .onClick(() => this.openProposeEdgeModal(node)),
-            );
-          }
-
           // Context edge creation
           menu.addItem((item: any) =>
             item.setTitle("Attach context note...").setIcon("file-text")
               .onClick(() => this.openConnectContextModal(node, true)),
           );
 
-          // Detail node demotion (method/field only)
-          if (meta.kind === "method" || meta.kind === "field") {
+          // Mark as stale (any ccoding node)
+          if (meta.status !== "stale") {
             menu.addItem((item: any) =>
-              item.setTitle("Remove detail node").setIcon("trash-2")
+              item.setTitle("Mark as stale").setIcon("clock")
                 .onClick(() => {
-                  this.removeDetailNode(node.id);
+                  this.markNodeStale(node.id);
                 }),
             );
           }
-        } else {
-          // Plain canvas node — offer to elevate
-          menu.addSeparator();
-          menu.addItem((item: any) =>
-            item.setTitle("Connect to code element...").setIcon("link")
-              .onClick(() => this.openConnectContextModal(node, false)),
-          );
-          menu.addItem((item: any) =>
-            item.setTitle("Elevate to ccoding element").setIcon("arrow-up-circle")
-              .onClick(() => this.openElevateModal(node)),
-          );
         }
       }),
     );
@@ -366,157 +346,41 @@ export default class CooperativeCodingPlugin extends Plugin {
     // Edge context menu
     this.registerEvent(
       this.app.workspace.on("canvas:edge-menu" as any, (menu: any, edge: any) => {
-        if (!this.cliAvailable) return;
         const meta = parseEdgeMetadata(edge?.unknownData?.ccoding);
         if (!meta) return;
 
-        if (meta.status === "proposed") {
-          menu.addSeparator();
-          menu.addItem((item: any) =>
-            item.setTitle("Accept proposal").setIcon("check")
-              .onClick(() => this.runAction(() => acceptElement(this.bridge, edge.id))),
-          );
-          menu.addItem((item: any) =>
-            item.setTitle("Reject proposal").setIcon("x")
-              .onClick(() => this.runAction(() => rejectElement(this.bridge, edge.id))),
-          );
-        } else if (meta.status === "rejected") {
-          menu.addSeparator();
-          menu.addItem((item: any) =>
-            item.setTitle("Reconsider").setIcon("rotate-ccw")
-              .onClick(() => this.runAction(() => reconsiderElement(this.bridge, edge.id))),
-          );
-        }
-      }),
-    );
-
-    // Canvas background context menu
-    this.registerEvent(
-      this.app.workspace.on("canvas:menu" as any, (menu: any) => {
-        // Direct element creation (no CLI needed)
-        menu.addSeparator();
-        menu.addItem((item: any) =>
-          item.setTitle("Add class...").setIcon("box")
-            .onClick(() => this.openCreateElementModal("class")),
-        );
-        menu.addItem((item: any) =>
-          item.setTitle("Add interface...").setIcon("layout-template")
-            .onClick(() => this.openCreateElementModal("interface")),
-        );
-        menu.addItem((item: any) =>
-          item.setTitle("Add package...").setIcon("package")
-            .onClick(() => this.openCreateElementModal("package")),
-        );
-        menu.addItem((item: any) =>
-          item.setTitle("Add module...").setIcon("file-code")
-            .onClick(() => this.openCreateElementModal("module")),
-        );
-
-        // CLI-backed proposals
+        // CLI-backed accept/reject/reconsider
         if (this.cliAvailable) {
-          menu.addSeparator();
-          menu.addItem((item: any) =>
-            item.setTitle("Propose new class (CLI)...").setIcon("plus-circle")
-              .onClick(() => {
-                new ProposeModal(this.app, this.bridge, () => this.refreshCanvas(), "class").open();
-              }),
-          );
-          menu.addItem((item: any) =>
-            item.setTitle("Propose new interface (CLI)...").setIcon("plus-circle")
-              .onClick(() => {
-                new ProposeModal(this.app, this.bridge, () => this.refreshCanvas(), "interface").open();
-              }),
-          );
-          menu.addItem((item: any) =>
-            item.setTitle("Manage proposals...").setIcon("list-checks")
-              .onClick(() => {
-                const canvas = this.currentCanvas;
-                if (!canvas) return;
-                const data = canvas.getData?.();
-                if (!data) return;
-                new BulkOperationsModal(this.app, data, this.bridge, () => this.refreshCanvas()).open();
-              }),
-          );
+          if (meta.status === "proposed") {
+            menu.addSeparator();
+            menu.addItem((item: any) =>
+              item.setTitle("Accept proposal").setIcon("check")
+                .onClick(() => this.runAction(() => acceptElement(this.bridge, edge.id))),
+            );
+            menu.addItem((item: any) =>
+              item.setTitle("Reject proposal").setIcon("x")
+                .onClick(() => this.runAction(() => rejectElement(this.bridge, edge.id))),
+            );
+          } else if (meta.status === "rejected") {
+            menu.addSeparator();
+            menu.addItem((item: any) =>
+              item.setTitle("Reconsider").setIcon("rotate-ccw")
+                .onClick(() => this.runAction(() => reconsiderElement(this.bridge, edge.id))),
+            );
+          }
         }
 
-        menu.addSeparator();
-        menu.addItem((item: any) =>
-          item.setTitle("Layout all nodes").setIcon("layout-grid")
-            .onClick(() => this.runLayout(true)),
-        );
+        // Mark as stale (any ccoding edge, no CLI needed)
+        if (meta.status !== "stale") {
+          menu.addSeparator();
+          menu.addItem((item: any) =>
+            item.setTitle("Mark as stale").setIcon("clock")
+              .onClick(() => this.markEdgeStale(edge.id)),
+          );
+        }
       }),
     );
-  }
 
-  // ─── Propose Edge Modal ────────────────────────────────────
-
-  private openProposeEdgeModal(sourceNode: any): void {
-    const canvas = this.currentCanvas;
-    if (!canvas?.nodes) return;
-
-    // Build list of all ccoding nodes as potential targets
-    const targets: Array<{ id: string; label: string }> = [];
-    for (const [, n] of canvas.nodes) {
-      const meta = parseCcodingMetadata(n.unknownData?.ccoding);
-      if (!meta) continue;
-      const label = meta.qualifiedName
-        || n.unknownData?.ccoding?.name
-        || n.text?.split("\n")[0]?.replace(/^#+\s*/, "").trim()
-        || n.id;
-      targets.push({ id: n.id, label });
-    }
-
-    const sourceMeta = parseCcodingMetadata(sourceNode.unknownData?.ccoding);
-    const sourceLabel = sourceMeta?.qualifiedName
-      || sourceNode.unknownData?.ccoding?.name
-      || sourceNode.text?.split("\n")[0]?.replace(/^#+\s*/, "").trim()
-      || sourceNode.id;
-
-    new ProposeEdgeModal(
-      this.app,
-      this.bridge,
-      sourceNode.id,
-      sourceLabel,
-      targets,
-      () => this.refreshCanvas(),
-    ).open();
-  }
-
-  // ─── Elevate plain node to ccoding ─────────────────────────
-
-  private openElevateModal(node: any): void {
-    const text = node.text || "";
-    new ElevateModal(this.app, node.id, text, (meta) => {
-      this.elevateNode(node, meta);
-    }).open();
-  }
-
-  private elevateNode(
-    node: any,
-    meta: { kind: string; name: string; stereotype?: string },
-  ): void {
-    const canvas = this.currentCanvas;
-    if (!canvas) return;
-
-    const data = canvas.getData?.();
-    if (!data) return;
-
-    // Find the node in canvas data and add ccoding metadata
-    const canvasNode = data.nodes.find((n: any) => n.id === node.id);
-    if (!canvasNode) return;
-
-    canvasNode.ccoding = {
-      kind: meta.kind,
-      qualifiedName: meta.name,
-      status: "accepted",
-      ...(meta.stereotype ? { stereotype: meta.stereotype } : {}),
-    };
-
-    canvas.setData?.(data);
-    canvas.requestSave?.();
-
-    new Notice(`Elevated "${meta.name}" to ccoding ${meta.kind}`, 3000);
-    this.refreshCanvas();
   }
 
   // ─── Direct Canvas Element Creation ────────────────────────
@@ -653,6 +517,33 @@ export default class CooperativeCodingPlugin extends Plugin {
     this.refreshCanvas();
   }
 
+  private addCreationMenuItems(menu: Menu): void {
+    menu.addSeparator();
+    menu.addItem((item: any) =>
+      item.setTitle("Create ccoding node...").setIcon("plus-circle")
+        .onClick(() => this.openCreateElementModal()),
+    );
+
+    if (this.cliAvailable) {
+      menu.addItem((item: any) =>
+        item.setTitle("Manage proposals...").setIcon("list-checks")
+          .onClick(() => {
+            const canvas = this.currentCanvas;
+            if (!canvas) return;
+            const data = canvas.getData?.();
+            if (!data) return;
+            new BulkOperationsModal(this.app, data, this.bridge, () => this.refreshCanvas()).open();
+          }),
+      );
+    }
+
+    menu.addSeparator();
+    menu.addItem((item: any) =>
+      item.setTitle("Layout all nodes").setIcon("layout-grid")
+        .onClick(() => this.runLayout(true)),
+    );
+  }
+
   private openCreateElementModal(defaultKind?: string): void {
     new CreateElementModal(this.app, defaultKind, (result: CreateElementResult) => {
       this.createElementOnCanvas(result);
@@ -674,10 +565,13 @@ export default class CooperativeCodingPlugin extends Plugin {
 
     addNodeToCanvasData(data, {
       kind: element.kind,
-      qualifiedName: element.name,
-      status: "accepted",
+      qualifiedName: element.qualifiedName || element.name,
+      status: element.status,
       stereotype: element.stereotype,
       language,
+      source: element.source,
+      proposedBy: element.proposedBy,
+      proposalRationale: element.rationale,
       text,
       x: offset,
       y: offset,
@@ -688,7 +582,8 @@ export default class CooperativeCodingPlugin extends Plugin {
     canvas.setData?.(data);
     canvas.requestSave?.();
 
-    new Notice(`Created ${element.kind}: ${element.name}`, 3000);
+    const verb = element.status === "proposed" ? "Proposed" : "Created";
+    new Notice(`${verb} ${element.kind}: ${element.name}`, 3000);
     this.refreshCanvas();
   }
 
@@ -711,39 +606,65 @@ export default class CooperativeCodingPlugin extends Plugin {
       fromNode: sourceId,
       toNode: relation.targetId,
       relation: relation.relation,
-      status: "accepted",
+      status: relation.status,
       label: relation.label,
+      proposedBy: relation.proposedBy,
+      proposalRationale: relation.rationale,
     });
 
     canvas.setData?.(data);
     canvas.requestSave?.();
 
-    new Notice(`Added ${relation.relation} relation`, 3000);
+    const verb = relation.status === "proposed" ? "Proposed" : "Added";
+    new Notice(`${verb} ${relation.relation} relation`, 3000);
     this.refreshCanvas();
   }
 
-  /**
-   * Remove a detail node (method/field) and its detail edge from the canvas.
-   * The code-side method/field is untouched per spec.
-   */
-  private removeDetailNode(nodeId: string): void {
+  private markNodeStale(nodeId: string): void {
     const canvas = this.currentCanvas;
     if (!canvas) return;
     const data = canvas.getData?.();
     if (!data) return;
 
-    // Remove edges connected to this node
-    data.edges = (data.edges || []).filter(
-      (e: any) => e.fromNode !== nodeId && e.toNode !== nodeId,
-    );
+    // Mark the node as stale instead of deleting
+    for (const n of data.nodes || []) {
+      if (n.id === nodeId && n.ccoding) {
+        n.ccoding.status = "stale";
+        break;
+      }
+    }
 
-    // Remove the node
-    data.nodes = (data.nodes || []).filter((n: any) => n.id !== nodeId);
+    // Mark connected edges as stale too
+    for (const e of data.edges || []) {
+      if ((e.fromNode === nodeId || e.toNode === nodeId) && e.ccoding) {
+        e.ccoding.status = "stale";
+      }
+    }
 
     canvas.setData?.(data);
     canvas.requestSave?.();
 
-    new Notice("Detail node removed from canvas.", 3000);
+    new Notice("Node marked as stale.", 3000);
+    this.refreshCanvas();
+  }
+
+  private markEdgeStale(edgeId: string): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) return;
+    const data = canvas.getData?.();
+    if (!data) return;
+
+    for (const e of data.edges || []) {
+      if (e.id === edgeId && e.ccoding) {
+        e.ccoding.status = "stale";
+        break;
+      }
+    }
+
+    canvas.setData?.(data);
+    canvas.requestSave?.();
+
+    new Notice("Edge marked as stale.", 3000);
     this.refreshCanvas();
   }
 
@@ -777,7 +698,7 @@ export default class CooperativeCodingPlugin extends Plugin {
         // Sync to propagate the re-link
         await this.runAction(() => syncCanvas(this.bridge, this.app));
       } else if (choice.action === "remove") {
-        this.removeDetailNode(node.id); // Reuses the same removal logic from Task 3
+        this.markNodeStale(node.id); // Reuses the same removal logic from Task 3
       }
     }).open();
   }
@@ -875,8 +796,25 @@ export default class CooperativeCodingPlugin extends Plugin {
     this.detachSelectionListener();
 
     const canvasData = canvas.getData?.() || { nodes: [], edges: [] };
-
     this.patcher.attach(canvas);
+
+    // Patch canvas background right-click menu to add ccoding items
+    if (!this.creationMenuPatched) {
+      this.creationMenuPatched = true;
+      const self = this;
+      const uninstall = around(Object.getPrototypeOf(canvas), {
+        showCreationMenu(next: any) {
+          return function (this: any, ...args: any[]) {
+            const menu = args[0];
+            if (menu?.addItem) {
+              self.addCreationMenuItems(menu);
+            }
+            return next.call(this, ...args);
+          };
+        },
+      });
+      this.register(uninstall);
+    }
 
     this.highlighter.buildCache(canvasData);
     this.highlighter.attach(canvas);

@@ -11,17 +11,15 @@ export function nodeAttributes(
   meta: CcodingMetadata,
   hideRejected: boolean,
 ): Record<string, string | undefined> {
-  const attrs: Record<string, string | undefined> = {};
-
-  if (meta.kind) attrs["data-ccoding-kind"] = meta.kind;
-  if (meta.status) attrs["data-ccoding-status"] = meta.status;
-  if (meta.stereotype) attrs["data-ccoding-stereotype"] = meta.stereotype;
-
-  if (meta.status === "rejected" && hideRejected) {
-    attrs["data-ccoding-rejected-hidden"] = "true";
-  }
-
-  return attrs;
+  // Always return all possible keys so stale attributes get cleared
+  return {
+    "data-ccoding-kind": meta.kind || undefined,
+    "data-ccoding-status": meta.status || undefined,
+    "data-ccoding-stereotype": meta.stereotype || undefined,
+    "data-ccoding-has-proposed-changes": meta.proposedChanges ? "true" : undefined,
+    "data-ccoding-rejected-hidden":
+      meta.status === "rejected" && hideRejected ? "true" : undefined,
+  };
 }
 
 /**
@@ -30,10 +28,10 @@ export function nodeAttributes(
 export function edgeAttributes(
   meta: EdgeMetadata,
 ): Record<string, string | undefined> {
-  const attrs: Record<string, string | undefined> = {};
-
-  if (meta.relation) attrs["data-ccoding-relation"] = meta.relation;
-  if (meta.status) attrs["data-ccoding-status"] = meta.status;
-
-  return attrs;
+  // Always return all possible keys so stale attributes get cleared
+  return {
+    "data-ccoding-relation": meta.relation || undefined,
+    "data-ccoding-status": meta.status || undefined,
+    "data-ccoding-has-proposed-changes": meta.proposedChanges ? "true" : undefined,
+  };
 }

@@ -15,6 +15,7 @@ export class CanvasPatcher {
   private settings: PluginSettings;
   private plugin: any;
   private canvas: any = null;
+  private patched = false;
 
   constructor(plugin: any, settings: PluginSettings) {
     this.plugin = plugin;
@@ -24,12 +25,17 @@ export class CanvasPatcher {
   /**
    * Attach to a canvas instance — apply attributes to all existing
    * nodes/edges and patch prototype methods for future additions.
+   * Safe to call multiple times; patches are only installed once.
    */
   attach(canvas: any): void {
     this.canvas = canvas;
 
-    // Apply attributes to all existing nodes/edges
+    // Always re-apply attributes (canvas data may have changed)
     this.applyAllAttributes();
+
+    // Only install monkey patches once
+    if (this.patched) return;
+    this.patched = true;
 
     // Patch addNode to set attributes on newly added nodes
     this.patchMethod(canvas, "addNode", (_next: Function) => {
@@ -118,14 +124,24 @@ export class CanvasPatcher {
   }
 
   private applyEdgeAttributes(edge: any): void {
-    const el = (edge?.lineGroupEl ?? edge?.wrapperEl ?? edge?.edgeEl) as HTMLElement | undefined;
-    if (!el) return;
+    // Following Advanced Canvas pattern: set data attributes on edge.path.display
+    // (the visible SVG <path> element) and line-end elements
+    const displayPath = edge?.path?.display as HTMLElement | undefined;
+    if (!displayPath) return;
 
     const meta = parseEdgeMetadata(edge.unknownData?.ccoding);
     if (!meta) return;
 
     const attrs = edgeAttributes(meta);
-    this.setDataAttributes(el, attrs);
+    this.setDataAttributes(displayPath, attrs);
+
+    // Also set on line-end elements for arrow styling
+    if (edge.fromLineEnd?.el) {
+      this.setDataAttributes(edge.fromLineEnd.el as HTMLElement, attrs);
+    }
+    if (edge.toLineEnd?.el) {
+      this.setDataAttributes(edge.toLineEnd.el as HTMLElement, attrs);
+    }
   }
 
   private setDataAttributes(

@@ -1,5 +1,12 @@
 // src/types.ts
 
+/** Proposed changes to an existing element (node or edge). */
+export interface ProposedChanges {
+  [key: string]: unknown;
+  proposedBy?: string;
+  proposalRationale?: string;
+}
+
 /** ccoding metadata on a canvas node. */
 export interface CcodingMetadata {
   kind?: string;         // "class" | "method" | "field" | "package"
@@ -10,6 +17,7 @@ export interface CcodingMetadata {
   status?: string;       // "accepted" | "proposed" | "rejected" | "stale"
   proposedBy?: string | null;
   proposalRationale?: string | null;
+  proposedChanges?: ProposedChanges | null;
   layoutPending?: boolean;
 }
 
@@ -19,6 +27,7 @@ export interface EdgeMetadata {
   status?: string;
   proposedBy?: string | null;
   proposalRationale?: string | null;
+  proposedChanges?: ProposedChanges | null;
 }
 
 /** Result of a CLI command execution. */
@@ -73,6 +82,10 @@ export function parseCcodingMetadata(
       typeof obj.proposalRationale === "string"
         ? obj.proposalRationale
         : null,
+    proposedChanges:
+      obj.proposedChanges != null && typeof obj.proposedChanges === "object"
+        ? (obj.proposedChanges as ProposedChanges)
+        : null,
     layoutPending: obj.layoutPending === true,
   };
 }
@@ -94,6 +107,10 @@ export function parseEdgeMetadata(
     proposalRationale:
       typeof obj.proposalRationale === "string"
         ? obj.proposalRationale
+        : null,
+    proposedChanges:
+      obj.proposedChanges != null && typeof obj.proposedChanges === "object"
+        ? (obj.proposedChanges as ProposedChanges)
         : null,
   };
 }

@@ -48,6 +48,9 @@ export interface NewNodeData {
   status: string;
   stereotype?: string;
   language?: string;
+  source?: string;
+  proposedBy?: string | null;
+  proposalRationale?: string | null;
   text: string;
   x: number;
   y: number;
@@ -63,6 +66,8 @@ export interface NewEdgeData {
   fromSide?: string;
   toSide?: string;
   label?: string;
+  proposedBy?: string | null;
+  proposalRationale?: string | null;
 }
 
 /**
@@ -85,8 +90,9 @@ export function addNodeToCanvasData(
       status: node.status,
       ...(node.stereotype ? { stereotype: node.stereotype } : {}),
       ...(node.language ? { language: node.language } : {}),
-      proposedBy: null,
-      proposalRationale: null,
+      ...(node.source ? { source: node.source } : {}),
+      proposedBy: node.proposedBy ?? null,
+      proposalRationale: node.proposalRationale ?? null,
     },
     x: node.x,
     y: node.y,
@@ -111,8 +117,8 @@ export function addEdgeToCanvasData(
     ccoding: {
       relation: edge.relation,
       status: edge.status,
-      proposedBy: null,
-      proposalRationale: null,
+      proposedBy: edge.proposedBy ?? null,
+      proposalRationale: edge.proposalRationale ?? null,
     },
     fromNode: edge.fromNode,
     fromSide: edge.fromSide || "right",
