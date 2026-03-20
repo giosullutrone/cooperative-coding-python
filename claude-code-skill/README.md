@@ -100,15 +100,21 @@ The plugin acts as the bridge between Claude Code and the ccoding CLI, providing
 claude-code-skill/
   .claude-plugin/
     plugin.json          # Plugin metadata
+  agents/
+    review.md            # Autonomous review agent
   commands/
     ccoding.md           # /ccoding slash command
   hooks/
-    hooks.json           # Session start hook for project detection
+    hooks.json           # Session start, canvas protection, sync nudge hooks
     scripts/
       session-start.sh   # Detects .ccoding/ directories
   skills/
     cooperative-coding/
-      SKILL.md           # Full skill instructions (4 modes)
+      SKILL.md           # Entry point: prerequisites, mode routing, CLI reference
+      create.md          # Create mode instructions
+      design.md          # Design mode instructions
+      implement.md       # Implement mode instructions
+      review.md          # Review mode dispatcher
 ```
 
 ## License
