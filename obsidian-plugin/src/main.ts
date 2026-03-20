@@ -167,7 +167,7 @@ export default class CooperativeCodingPlugin extends Plugin {
       name: "Sync canvas with code",
       checkCallback: (checking: boolean) => {
         if (!this.cliAvailable) return false;
-        if (!checking) this.runAction(() => syncCanvas(this.bridge));
+        if (!checking) this.runAction(() => syncCanvas(this.bridge, this.app));
         return true;
       },
     });
@@ -748,7 +748,7 @@ export default class CooperativeCodingPlugin extends Plugin {
         new Notice(`Re-linked to ${choice.qualifiedName}`, 3000);
         this.refreshCanvas();
         // Sync to propagate the re-link
-        await this.runAction(() => syncCanvas(this.bridge));
+        await this.runAction(() => syncCanvas(this.bridge, this.app));
       } else if (choice.action === "remove") {
         this.removeDetailNode(node.id); // Reuses the same removal logic from Task 3
       }

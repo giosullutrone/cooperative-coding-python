@@ -1,9 +1,17 @@
 // tests/ghost/actions.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock obsidian Notice
+// Mock obsidian Notice, Modal, Setting
 vi.mock("obsidian", () => ({
   Notice: vi.fn().mockImplementation(() => ({ hide: vi.fn() })),
+  Modal: vi.fn().mockImplementation(function (this: any) {
+    this.open = vi.fn();
+    this.close = vi.fn();
+    this.contentEl = { empty: vi.fn() };
+  }),
+  Setting: vi.fn().mockImplementation(() => ({
+    addButton: vi.fn().mockReturnThis(),
+  })),
 }));
 
 import { acceptElement, rejectElement, syncCanvas } from "../../src/ghost/actions";
@@ -17,7 +25,9 @@ function mockBridge(result: any): CcodingBridge {
     acceptAll: vi.fn().mockResolvedValue(result),
     rejectAll: vi.fn().mockResolvedValue(result),
     sync: vi.fn().mockResolvedValue(result),
+    syncJson: vi.fn().mockResolvedValue(result),
     status: vi.fn().mockResolvedValue(result),
+    statusJson: vi.fn().mockResolvedValue(result),
   } as any;
 }
 
@@ -42,12 +52,12 @@ describe("ghost actions", () => {
 
   it("retries on busy error", async () => {
     const busyResult = { success: false, stdout: "", stderr: "EBUSY: file locked", exitCode: 1 };
-    const okResult = { success: true, stdout: "", stderr: "", exitCode: 0 };
+    const okResult = { success: true, stdout: JSON.stringify({ status: "ok", synced: [], conflicts: [] }), stderr: "", exitCode: 0 };
     const bridge = mockBridge(busyResult);
-    (bridge.sync as any)
+    (bridge.syncJson as any)
       .mockResolvedValueOnce(busyResult)
       .mockResolvedValueOnce(okResult);
     await syncCanvas(bridge);
-    expect(bridge.sync).toHaveBeenCalledTimes(2);
+    expect(bridge.syncJson).toHaveBeenCalledTimes(2);
   });
 });

@@ -124,6 +124,16 @@ export class CcodingBridge {
     return this.run(["status"]);
   }
 
+  /** Sync with JSON output for structured parsing. */
+  syncJson(): Promise<CommandResult> {
+    return this.run(["sync", "--json"]);
+  }
+
+  /** Status with JSON output for structured parsing. */
+  statusJson(): Promise<CommandResult> {
+    return this.run(["status", "--json"]);
+  }
+
   check(): Promise<CommandResult> {
     return this.run(["check"]);
   }
