@@ -11,6 +11,30 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the file_path parameter ends with '.canvas'. If it does, respond ONLY with: 'USE_CLI: Use ccoding CLI commands (set-text, propose, sync) instead of editing .canvas files directly — direct edits bypass sync state and cause drift.' If the file does NOT end with '.canvas', respond with an empty string.",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the file_path parameter ends with '.py'. If it does, respond ONLY with: 'SYNC_REMINDER: Consider running ccoding sync to keep the canvas in sync with code changes.' Otherwise respond with an empty string.",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
