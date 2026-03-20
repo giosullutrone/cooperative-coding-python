@@ -41,17 +41,42 @@ skills/
 
 Each mode file references back: "See the `cooperative-coding` skill for prerequisites, CLI reference, and error handling."
 
-**Mode files** each get skill frontmatter:
-- `create.md`: `description: "Use when building a new CooperativeCoding canvas design from scratch — gathering requirements, proposing architecture, creating nodes and edges"`
-- `design.md`: `description: "Use when analyzing an existing CooperativeCoding canvas and proposing improvements as ghost nodes"`
-- `implement.md`: `description: "Use when generating code from accepted CooperativeCoding canvas nodes — skeleton or full implementation"`
-- `review.md`: `description: "Use when checking CooperativeCoding canvas-to-code drift, architectural violations, or staleness"`
+**Mode files** each get full skill frontmatter:
 
-**`/ccoding` command** updates to reference mode-specific skills:
+```yaml
+# create.md
+---
+name: cooperative-coding:create
+description: "Use when building a new CooperativeCoding canvas design from scratch — gathering requirements, proposing architecture, creating nodes and edges"
+---
+
+# design.md
+---
+name: cooperative-coding:design
+description: "Use when analyzing an existing CooperativeCoding canvas and proposing improvements as ghost nodes"
+---
+
+# implement.md
+---
+name: cooperative-coding:implement
+description: "Use when generating code from accepted CooperativeCoding canvas nodes — skeleton or full implementation"
+---
+
+# review.md
+---
+name: cooperative-coding:review
+description: "Use when checking CooperativeCoding canvas-to-code drift, architectural violations, or staleness"
+---
+```
+
+**`/ccoding` command** updates to route to mode-specific skills:
+
 ```
 If mode is "create" → follow the cooperative-coding:create skill
 If mode is "design" → follow the cooperative-coding:design skill
-...
+If mode is "implement" → follow the cooperative-coding:implement skill
+If mode is "review" → follow the cooperative-coding:review skill
+If no mode specified → follow the cooperative-coding skill (SKILL.md handles mode resolution via last_mode / ask)
 ```
 
 ### Content split
@@ -72,16 +97,7 @@ When Claude uses `Edit` or `Write` on a `.canvas` file, it bypasses the ccoding 
 
 ### Design
 
-Add a prompt-based PreToolUse hook in `hooks/hooks.json`:
-
-```json
-{
-  "type": "prompt",
-  "matcher": "Edit|Write",
-  "prompt": "Check if the file_path parameter ends with '.canvas'. If it does, respond ONLY with: 'USE_CLI: Use ccoding CLI commands (set-text, propose, sync) instead of editing .canvas files directly — direct edits bypass sync state and cause drift.' If the file does NOT end with '.canvas', respond with an empty string.",
-  "timeout": 5
-}
-```
+Add a prompt-based PreToolUse hook in `hooks/hooks.json`.
 
 **Behavior:** This doesn't hard-block the tool. It injects a warning that steers Claude toward using the CLI. The user can still approve the edit if they want.
 
@@ -95,18 +111,57 @@ After Claude writes or edits Python files in a ccoding project, the canvas may b
 
 ### Design
 
-Add a prompt-based PostToolUse hook in `hooks/hooks.json`:
+Add a prompt-based PostToolUse hook in `hooks/hooks.json`.
+
+**Behavior:** Light-touch nudge. Claude sees the reminder and can decide whether to sync now or defer. Not every Python edit warrants a sync — the agent uses judgment. The session-start hook already detects whether this is a ccoding project, so the PostToolUse hook simply checks for `.py` file extension — no filesystem check needed.
+
+---
+
+### Complete hooks.json after changes
+
+The full `hooks/hooks.json` after adding both hooks:
 
 ```json
 {
-  "type": "prompt",
-  "matcher": "Write|Edit",
-  "prompt": "Check if the file_path parameter ends with '.py'. If it does, check if a .ccoding/ directory exists by looking at the file path (is it within a project that has .ccoding/). If BOTH conditions are true, respond ONLY with: 'SYNC_REMINDER: Consider running ccoding sync to keep the canvas in sync with code changes.' Otherwise respond with an empty string.",
-  "timeout": 5
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the file_path parameter ends with '.canvas'. If it does, respond ONLY with: 'USE_CLI: Use ccoding CLI commands (set-text, propose, sync) instead of editing .canvas files directly — direct edits bypass sync state and cause drift.' If the file does NOT end with '.canvas', respond with an empty string.",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the file_path parameter ends with '.py'. If it does, respond ONLY with: 'SYNC_REMINDER: Consider running ccoding sync to keep the canvas in sync with code changes.' Otherwise respond with an empty string.",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
-```
-
-**Behavior:** Light-touch nudge. Claude sees the reminder and can decide whether to sync now or defer. Not every Python edit warrants a sync — the agent uses judgment.
 
 ---
 
