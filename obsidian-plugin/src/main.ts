@@ -30,6 +30,7 @@ import {
   type ConnectContextResult,
 } from "./ghost/modals";
 import { RestoreModal, type RestoreChoice } from "./ghost/restore-modal";
+import { BulkOperationsModal } from "./ghost/bulk-modal";
 import { layoutCanvas } from "./layout/hierarchical";
 import {
   addNodeToCanvasData,
@@ -200,6 +201,22 @@ export default class CooperativeCodingPlugin extends Plugin {
       checkCallback: (checking: boolean) => {
         if (!this.cliAvailable) return false;
         if (!checking) this.listProposals();
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "cooperative-coding:bulk-manage",
+      name: "Manage proposals...",
+      checkCallback: (checking: boolean) => {
+        if (!this.cliAvailable) return false;
+        if (!checking) {
+          const canvas = this.currentCanvas;
+          if (!canvas) return;
+          const data = canvas.getData?.();
+          if (!data) return;
+          new BulkOperationsModal(this.app, data, this.bridge, () => this.refreshCanvas()).open();
+        }
         return true;
       },
     });
@@ -408,6 +425,16 @@ export default class CooperativeCodingPlugin extends Plugin {
             item.setTitle("Propose new interface (CLI)...").setIcon("plus-circle")
               .onClick(() => {
                 new ProposeModal(this.app, this.bridge, () => this.refreshCanvas(), "interface").open();
+              }),
+          );
+          menu.addItem((item: any) =>
+            item.setTitle("Manage proposals...").setIcon("list-checks")
+              .onClick(() => {
+                const canvas = this.currentCanvas;
+                if (!canvas) return;
+                const data = canvas.getData?.();
+                if (!data) return;
+                new BulkOperationsModal(this.app, data, this.bridge, () => this.refreshCanvas()).open();
               }),
           );
         }
