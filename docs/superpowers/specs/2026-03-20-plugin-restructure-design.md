@@ -150,7 +150,7 @@ The full `hooks/hooks.json` after adding both hooks:
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "prompt",
@@ -162,6 +162,7 @@ The full `hooks/hooks.json` after adding both hooks:
     ]
   }
 }
+```
 
 ---
 
@@ -205,8 +206,10 @@ The agent receives the project root and canvas path. It:
 
 **Triggering:**
 
-- **Manual:** User says "review the architecture", "check for drift", "is the canvas in sync?" — the main skill routes to the agent
-- **Automatic:** The `review.md` skill's description includes "Dispatched automatically after implement sessions". The implement mode's instructions include a closing nudge: "After implementing multiple classes, dispatch the ccoding-review agent to check alignment."
+- **Manual:** User says "review the architecture", "check for drift", "is the canvas in sync?" — the review skill dispatches to the agent
+- **Automatic:** The implement mode's instructions include a closing nudge: "After implementing multiple classes, dispatch the ccoding-review agent to check alignment."
+
+**Review skill → agent relationship:** The `skills/cooperative-coding/review.md` file becomes a thin dispatcher — it describes when review is appropriate, then instructs Claude to dispatch the `ccoding-review` agent with the project root and canvas path. All heavy analysis happens in the agent, keeping the skill's context footprint minimal.
 
 **Agent tools:** Read-only — `Bash` (for ccoding CLI), `Read`, `Grep`, `Glob`. No `Write` or `Edit`.
 
