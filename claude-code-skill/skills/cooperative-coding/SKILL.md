@@ -1,6 +1,5 @@
 ---
 name: cooperative-coding
-version: 0.1.0
 description: "This skill should be used when working with CooperativeCoding canvases — creating initial software designs from requirements, analyzing and improving existing designs, generating code from accepted canvas nodes, or reviewing canvas-to-code drift. Use whenever the user mentions canvas design, ghost nodes, the ccoding CLI, architectural proposals, code generation from canvas, sync status, design drift, or wants to collaboratively design software architecture on a visual canvas. Also triggers on the /ccoding command. Must be used whenever a CooperativeCoding project is detected (presence of .ccoding/ directory) and the user discusses architecture, design, implementation, or code review."
 ---
 
@@ -56,6 +55,34 @@ Once the mode is determined, follow the corresponding skill:
 
 ---
 
+## Checking What Changed
+
+Before doing any work, check what the user has changed since the last sync. Use the `--json` flag for structured output you can parse:
+
+```bash
+# Structured diff — what would change on sync
+ccoding diff --json
+```
+
+Returns JSON with these arrays of qualified names:
+- `canvas_modified` — user changed these nodes on the canvas
+- `code_modified` — code changed for these elements
+- `canvas_added` — new nodes on canvas (not yet in code)
+- `code_added` — new classes in code (not yet on canvas)
+- `canvas_deleted` — removed from canvas
+- `code_deleted` — removed from code
+- `conflicts` — both sides changed (has `qualified_name`, `canvas_hash`, `code_hash`)
+- `in_sync` — no changes
+
+```bash
+# Full status with project metadata
+ccoding status --json
+```
+
+Returns the same diff nested under a `diff` key, plus `canvas`, `source`, `tracked`, `canvas_exists`.
+
+**Always check `ccoding diff --json` before proposing changes or syncing.** This tells you what the user has been working on and prevents stepping on their changes.
+
 ## CLI Quick Reference
 
 **Global option:** `--project <path>` — set project root (default: `.`). Use when CWD is not the project root.
@@ -63,8 +90,8 @@ Once the mode is determined, follow the corresponding skill:
 | Command | Syntax | Purpose |
 |---------|--------|---------|
 | init | `ccoding init` | Initialize project |
-| status | `ccoding status` | Sync state and drift report |
-| diff | `ccoding diff` | Dry-run sync preview |
+| status | `ccoding status [--json]` | Sync state and drift report |
+| diff | `ccoding diff [--json]` | Dry-run sync preview |
 | check | `ccoding check` | Pass/fail validation |
 | sync | `ccoding sync [--canvas-wins\|--code-wins]` | Bidirectional sync |
 | show | `ccoding show <qualified_name>` | Node details (by qualified name) |

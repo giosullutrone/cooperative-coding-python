@@ -40,14 +40,23 @@ def init(ctx: click.Context) -> None:
 
 
 @main.command()
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Output as JSON for programmatic consumption.")
 @click.pass_context
-def status(ctx: click.Context) -> None:
+def status(ctx: click.Context, as_json: bool) -> None:
     """Show the sync status between canvas and code."""
-    from ccoding.sync.engine import sync_status
+    import json as json_mod
+    from ccoding.sync.engine import sync_status, compute_project_diff
 
     project: Path = ctx.obj["project"]
-    report = sync_status(project)
-    click.echo(report)
+
+    if as_json:
+        diff, meta = compute_project_diff(project)
+        output = {**meta, "diff": diff.to_dict()}
+        click.echo(json_mod.dumps(output, indent=2))
+    else:
+        report = sync_status(project)
+        click.echo(report)
 
 
 # ---------------------------------------------------------------------------
@@ -527,56 +536,27 @@ def set_text(ctx: click.Context, node_id: str, text_file) -> None:
 
 
 @main.command()
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Output as JSON for programmatic consumption.")
 @click.pass_context
-def diff(ctx: click.Context) -> None:
+def diff(ctx: click.Context, as_json: bool) -> None:
     """Dry-run sync: show what would change without applying changes."""
-    from ccoding.config import load_config
-    from ccoding.canvas.reader import read_canvas
-    from ccoding.code.parser import PythonAstParser, ClassElement
-    from ccoding.sync.differ import compute_diff
-    from ccoding.sync.hasher import content_hash
-    from ccoding.sync.state import load_sync_state
-    from ccoding.sync.engine import _qualified_name, _hash_class_element
-    from pathlib import Path as _Path
+    import json as json_mod
+    from ccoding.sync.engine import compute_project_diff
 
     project: Path = ctx.obj["project"]
-    config = load_config(project)
-    canvas_path = project / config.canvas
-    source_root = project / config.source_root
+    d, meta = compute_project_diff(project)
 
-    if not canvas_path.exists():
-        click.echo("No canvas file found.")
+    if not meta["canvas_exists"]:
+        if as_json:
+            click.echo(json_mod.dumps({"error": "No canvas file found."}))
+        else:
+            click.echo("No canvas file found.")
         return
 
-    canvas = read_canvas(canvas_path)
-
-    parser = PythonAstParser()
-    code_elements: list[ClassElement] = []
-    if source_root.exists():
-        all_elements = parser.parse_directory(source_root)
-        code_elements = [e for e in all_elements if isinstance(e, ClassElement)]
-
-    state = load_sync_state(project)
-
-    canvas_hashes: dict[str, str] = {}
-    for node in canvas.nodes:
-        if node.ccoding and node.ccoding.qualified_name:
-            if node.ccoding.kind != "class":
-                continue
-            if node.ccoding.status in ("proposed", "rejected", "stale"):
-                continue
-            canvas_hashes[node.ccoding.qualified_name] = content_hash(node.text)
-
-    code_hashes: dict[str, str] = {}
-    for elem in code_elements:
-        qname = _qualified_name(
-            _Path(elem.source_path) if elem.source_path else source_root,
-            elem.name,
-            source_root,
-        )
-        code_hashes[qname] = _hash_class_element(elem)
-
-    d = compute_diff(state, canvas_hashes, code_hashes)
+    if as_json:
+        click.echo(json_mod.dumps(d.to_dict(), indent=2))
+        return
 
     has_changes = False
 

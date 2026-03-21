@@ -11,6 +11,15 @@ class Conflict:
     stored_canvas_hash: str
     stored_code_hash: str
 
+    def to_dict(self) -> dict:
+        return {
+            "qualified_name": self.qualified_name,
+            "canvas_hash": self.canvas_hash,
+            "code_hash": self.code_hash,
+            "stored_canvas_hash": self.stored_canvas_hash,
+            "stored_code_hash": self.stored_code_hash,
+        }
+
 
 @dataclass
 class SyncDiff:
@@ -22,6 +31,18 @@ class SyncDiff:
     code_added: list[str] = field(default_factory=list)
     canvas_deleted: list[str] = field(default_factory=list)
     code_deleted: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "in_sync": self.in_sync,
+            "canvas_modified": self.canvas_modified,
+            "code_modified": self.code_modified,
+            "canvas_added": self.canvas_added,
+            "code_added": self.code_added,
+            "canvas_deleted": self.canvas_deleted,
+            "code_deleted": self.code_deleted,
+            "conflicts": [c.to_dict() for c in self.conflicts],
+        }
 
 
 def compute_diff(

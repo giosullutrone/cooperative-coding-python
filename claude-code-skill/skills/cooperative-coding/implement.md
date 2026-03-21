@@ -46,8 +46,8 @@ When the user asks to implement a specific method or class:
 
 ## Conflict Handling
 
-Before writing any file, run `ccoding status`. If the file has unsynchronized changes:
-- Tell the user: "<file> has unsynchronized changes. Overwrite, merge, or skip?"
+Before writing any file, run `ccoding diff --json` to get a structured view of what's changed. If the output shows `canvas_modified`, `code_modified`, or `conflicts` for the element you're about to implement:
+- Tell the user: "<element> has unsynchronized changes. Overwrite, merge, or skip?"
 - Wait for their choice
 
 ## Post-Implementation Review

@@ -12,9 +12,12 @@ Analyze an existing canvas and propose improvements as ghost nodes.
 ## Read Current State
 
 ```bash
+ccoding diff --json     # What changed since last sync (structured)
 ccoding status          # Project overview and sync state
 ccoding ghosts          # List pending proposals
 ```
+
+Check `diff --json` first to understand what the user has changed on the canvas or in code. This prevents proposing changes that conflict with in-progress work.
 
 Also read the `.canvas` file directly (read-only) for the full graph structure — `status` alone doesn't provide complete node/edge data needed for architectural analysis.
 

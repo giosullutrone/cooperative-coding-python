@@ -1244,14 +1244,18 @@ def sync(
 # ---------------------------------------------------------------------------
 
 
-def sync_status(project_root: Path) -> str:
-    """Return a human-readable status report for the CLI status command."""
+def compute_project_diff(project_root: Path) -> tuple[SyncDiff, dict]:
+    """Compute the sync diff for a project. Returns (diff, metadata).
+
+    Shared logic used by both ``status`` and ``diff`` CLI commands.
+    The metadata dict contains canvas path, source root, and tracked count.
+    """
     config = load_config(project_root)
     canvas_path = project_root / config.canvas
     source_root = project_root / config.source_root
 
     if not canvas_path.exists():
-        return "No canvas file found."
+        return SyncDiff(), {"canvas": str(config.canvas), "source": str(config.source_root), "tracked": 0, "canvas_exists": False}
 
     canvas = read_canvas(canvas_path)
 
@@ -1263,13 +1267,9 @@ def sync_status(project_root: Path) -> str:
 
     state = load_sync_state(project_root)
 
-    # Build hashes
     canvas_hashes: dict[str, str] = {}
     for node in canvas.nodes:
         if node.ccoding and node.ccoding.qualified_name:
-            # Only class nodes participate in the bidirectional sync diff.
-            # Method/field detail nodes are managed by the class node and must
-            # not be treated as independent canvas-added elements.
             if node.ccoding.kind != "class":
                 continue
             if node.ccoding.status in ("proposed", "rejected", "stale"):
@@ -1286,11 +1286,26 @@ def sync_status(project_root: Path) -> str:
         code_hashes[qname] = _hash_class_element(elem)
 
     diff = compute_diff(state, canvas_hashes, code_hashes)
+    meta = {
+        "canvas": str(config.canvas),
+        "source": str(config.source_root),
+        "tracked": len(state.elements),
+        "canvas_exists": True,
+    }
+    return diff, meta
+
+
+def sync_status(project_root: Path) -> str:
+    """Return a human-readable status report for the CLI status command."""
+    diff, meta = compute_project_diff(project_root)
+
+    if not meta["canvas_exists"]:
+        return "No canvas file found."
 
     lines: list[str] = []
-    lines.append(f"Canvas: {config.canvas}")
-    lines.append(f"Source: {config.source_root}")
-    lines.append(f"Tracked elements: {len(state.elements)}")
+    lines.append(f"Canvas: {meta['canvas']}")
+    lines.append(f"Source: {meta['source']}")
+    lines.append(f"Tracked elements: {meta['tracked']}")
     lines.append("")
 
     if diff.in_sync:
